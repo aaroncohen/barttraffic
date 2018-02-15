@@ -4,8 +4,7 @@ var map;
 var bartapi = new BartAPI();
 
 
-$(document).ready(() => {
-    window.initMap = () => {
+$(() => {
         console.log('Initializing map');
         map = new google.maps.Map(document.getElementById('map'), {
             center: {lat: 37.804872, lng: -122.295140},
@@ -16,17 +15,7 @@ $(document).ready(() => {
             .then(stations => stationListToMarkers(stations))
             .then(stationMarkers => createStationLinks(stationMarkers))
             .then(({stationMarkers, stationLinks}) => createStationDetails(stationMarkers, stationLinks));
-            //.then(stationDetails => {
-            //    for (let station of Object.keys(stationDetails)) {
-            //        let stationDetail = stationDetails[station];
-            //        stationDetail.marker.setMap(map);
-            //        for (let segment of stationDetail.segments) {
-            //            segment.setMap(map);
-            //        }
-            //    }
-            //})
-    }
-});
+    });
 
 function createStationLinks(stationMarkers) {
     // Create a map of stations allowing lookup by abbreviation to get north and south connected stations and relevant
