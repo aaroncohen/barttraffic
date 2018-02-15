@@ -1,5 +1,5 @@
 
-const baseUrl = "http://api.bart.gov/api/";
+const baseUrl = "https://api.bart.gov/api/";
 
 const defaultParams = {
     json: 'y',
