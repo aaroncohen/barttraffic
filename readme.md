@@ -3,6 +3,8 @@ Bart Traffic
 
 RECENT VERSIONS OF CHROME ONLY, uses ECMAScript 6 features without translation/polyfill.
 
+Live page: <https://aaroncohen.github.io/barttraffic/>
+
 A visualization tool for the BART (Bay Area Rapid Transit) API that shows train delays as "Traffic" between stations,
 similar to the way that Google Maps shows vehicular traffic.
 
