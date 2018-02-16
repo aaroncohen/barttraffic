@@ -71,42 +71,41 @@ function createStationDetails(stationMarkers, stationLinks) {
             .then(estimates => {
                 let segments = [];
                 if (estimates && estimates.length > 0) {
-                    for (let destination of estimates) {  // Destination is last station train will visit
-                        let routeDelays = {'North': {}, 'South': {}};
+                    let allDestinations = [].concat([], ...estimates.map(dest => dest.estimate));
+                    let routeDelays = {'North': {}, 'South': {}};
 
-                        for (let trainEst of Object.values(destination.estimate)) {
-                            if (!routeDelays[trainEst.direction].hasOwnProperty(trainEst.color)) {
-                                routeDelays[trainEst.direction][trainEst.color] = [];
+                    for (let trainEst of allDestinations) {
+                        if (!routeDelays[trainEst.direction].hasOwnProperty(trainEst.color)) {
+                            routeDelays[trainEst.direction][trainEst.color] = [];
+                        }
+                        routeDelays[trainEst.direction][trainEst.color].push(parseInt(trainEst.delay))
+                    }
+
+                    for (let direction of ['North', 'South']) {
+                        // TODO: I think I've got the directions in these data structures reversed, though the
+                        // TODO: output is correct
+
+                        // Collect routes that come from each prev station
+                        let prevStationRoutes = {};
+                        if (stationLinks[stationAbbr][direction]) {
+                            for (let [color, stn] of Object.entries(stationLinks[stationAbbr][direction])) {
+                                if (!prevStationRoutes[stn.label]) {
+                                    prevStationRoutes[stn.label] = new Set()
+                                }
+                                prevStationRoutes[stn.label].add(color);
                             }
-                            routeDelays[trainEst.direction][trainEst.color].push(parseInt(trainEst.delay))
                         }
 
-                        for (let direction of ['North', 'South']) {
-                            // TODO: I think I've got the directions in these data structures reversed, though the
-                            // TODO: output is correct
+                        // Get average estimate for all trains coming from previous station
+                        let prevStationEstimates = {};
+                        for (let [prevStationAbbr, colors] of Object.entries(prevStationRoutes)) {
+                            prevStationEstimates[prevStationAbbr] =
+                                [...colors].map(color => avgDelay(routeDelays[reverseDirection(direction)][color] || []))
+                        }
 
-                            // Collect routes that come from each prev station
-                            let prevStationRoutes = {};
-                            if (stationLinks[stationAbbr][direction]) {
-                                for (let [color, stn] of Object.entries(stationLinks[stationAbbr][direction])) {
-                                    if (!prevStationRoutes[stn.label]) {
-                                        prevStationRoutes[stn.label] = new Set()
-                                    }
-                                    prevStationRoutes[stn.label].add(color);
-                                }
-                            }
-
-                            // Get average estimate for all trains coming from previous station
-                            let prevStationEstimates = {};
-                            for (let [prevStationAbbr, colors] of Object.entries(prevStationRoutes)) {
-                                prevStationEstimates[prevStationAbbr] =
-                                    [...colors].map(color => avgDelay(routeDelays[reverseDirection(direction)][color] || []))
-                            }
-
-                            // Create Segment for each previous station
-                            for (let [prevStationAbbr, estimate] of Object.entries(prevStationEstimates)) {
-                                segments.push(polylineForStations([stationLinks[prevStationAbbr], station], reverseDirection(direction), estimate))
-                            }
+                        // Create Segment for each previous station
+                        for (let [prevStationAbbr, estimate] of Object.entries(prevStationEstimates)) {
+                            segments.push(polylineForStations([stationLinks[prevStationAbbr], station], reverseDirection(direction), estimate))
                         }
                     }
                 }
@@ -149,7 +148,7 @@ function lineColorForEstimate(delay) {
     if (delay > 30) {
         return 'red';
     } else if (delay > 5) {
-        return 'yellow';
+        return 'orange';
     } else {
         return 'green';
     }
@@ -181,8 +180,15 @@ function polylineForStations(stationMarkers, direction, estimate) {
         scale: 3
     };
 
+    // Cut line between stations at midpoint and set the start point to the midpoint -- this will allow us to see
+    // each direction clearly
+    let midpoint = middlePoint(locations[0].lat(), locations[0].lng(),
+        locations[1].lat(), locations[1].lng());
+
+    let newStart = new google.maps.LatLng(midpoint[0], midpoint[1]);
+
     return new google.maps.Polyline({
-        path: locations,
+        path: [newStart, locations[1]],
         geodesic: true,
         strokeColor: lineColorForEstimate(estimate),
         strokeOpacity: 0.5,
@@ -249,4 +255,40 @@ function addArrivalWindowToMarker(marker, estimates, map) {
         }
     });
 
+}
+
+
+/*
+ * Find midpoint between two coordinates points
+ * Source : http://www.movable-type.co.uk/scripts/latlong.html
+ */
+
+//-- Define radius function
+function toRad(num) {
+    return num * Math.PI / 180;
+}
+
+//-- Define degrees function
+function toDeg(num) {
+    return num * (180 / Math.PI);
+}
+
+//-- Define middle point function
+function middlePoint(lat1, lng1, lat2, lng2) {
+
+    //-- Longitude difference
+    var dLng = toRad(lng2 - lng1);
+
+    //-- Convert to radians
+    lat1 = toRad(lat1);
+    lat2 = toRad(lat2);
+    lng1 = toRad(lng1);
+
+    var bX = Math.cos(lat2) * Math.cos(dLng);
+    var bY = Math.cos(lat2) * Math.sin(dLng);
+    var lat3 = Math.atan2(Math.sin(lat1) + Math.sin(lat2), Math.sqrt((Math.cos(lat1) + bX) * (Math.cos(lat1) + bX) + bY * bY));
+    var lng3 = lng1 + Math.atan2(bY, Math.cos(lat1) + bX);
+
+    //-- Return result
+    return [toDeg(lat3), toDeg(lng3)];
 }
