@@ -82,28 +82,31 @@ function createStationDetails(stationMarkers, stationLinks) {
                         }
 
                         for (let direction of ['North', 'South']) {
-                            let numArrivingRoutes = stationLinks[stationAbbr][direction].length;
-                            let numPrevStations = Object.values(stationLinks[stationAbbr][direction]).reduce(
-                                (total, route) => route.length
-                            );
+                            // TODO: I think I've got the directions in these data structures reversed, though the
+                            // TODO: output is correct
 
-                            // TODO: refactor out this duplication
-                            if (numArrivingRoutes <= numPrevStations) {
-                                for (let routeColor of Object.keys(routeDelays[reverseDirection(direction)])) {
-                                        let estimate = avgDelay(routeDelays[reverseDirection(direction)][routeColor]);
-                                        let previousStation = stationLinks[stationAbbr][direction][routeColor];
-                                        segments.push(polylineForStations([previousStation, station], reverseDirection(direction), estimate))
-                                }
-                            } else {
-                                let estimate = avgDelay([].concat.apply([],
-                                    Object.values(stationLinks[stationAbbr][direction])));
-                                let allPrevStations = [].concat.apply([],
-                                    Object.values(stationLinks[stationAbbr][direction]));
-                                for (let previousStation of allPrevStations) {
-                                    segments.push(polylineForStations([previousStation, station], reverseDirection(direction), estimate))
+                            // Collect routes that come from each prev station
+                            let prevStationRoutes = {};
+                            if (stationLinks[stationAbbr][direction]) {
+                                for (let [color, stn] of Object.entries(stationLinks[stationAbbr][direction])) {
+                                    if (!prevStationRoutes[stn.label]) {
+                                        prevStationRoutes[stn.label] = new Set()
+                                    }
+                                    prevStationRoutes[stn.label].add(color);
                                 }
                             }
 
+                            // Get average estimate for all trains coming from previous station
+                            let prevStationEstimates = {};
+                            for (let [prevStationAbbr, colors] of Object.entries(prevStationRoutes)) {
+                                prevStationEstimates[prevStationAbbr] =
+                                    [...colors].map(color => avgDelay(routeDelays[reverseDirection(direction)][color] || []))
+                            }
+
+                            // Create Segment for each previous station
+                            for (let [prevStationAbbr, estimate] of Object.entries(prevStationEstimates)) {
+                                segments.push(polylineForStations([stationLinks[prevStationAbbr], station], reverseDirection(direction), estimate))
+                            }
                         }
                     }
                 }
@@ -145,7 +148,7 @@ function avgDelay(delays) {
 function lineColorForEstimate(delay) {
     if (delay > 30) {
         return 'red';
-    } else if (delay > 10) {
+    } else if (delay > 5) {
         return 'yellow';
     } else {
         return 'green';
@@ -202,8 +205,8 @@ function reverseDirection(direction) {
 
 function formatStationInfo(stationName, estimates) {
     return `
+        <h5>${stationName}</h5>
         <table class="table">
-            <h5>${stationName}</h5>
             <thead>
                 <tr>
                     <th scope="col">Destination</th>
