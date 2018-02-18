@@ -22,7 +22,8 @@ function createStationLinks(stationMarkers) {
     // routes.
 
     // NOTE: Using routeColor here because it's the only indication of the actual route in the estimated times later.
-    // Structure: stationLinks[abbreviation][direction][routeColor] = [stationAbrv, stationAbrv...]
+    // NOTE: Direction can vary by route despite heading in the same physical direction between two stations.
+
     let stationLinks = {};
 
     return bartapi.routeList()
@@ -40,14 +41,14 @@ function createStationLinks(stationMarkers) {
 
                             // Ensure structure
                             if (!stationLinks[abbr]) {
-                                stationLinks[abbr] = stationMarkers[abbr]
+                                stationLinks[abbr] = {byStation: {}};
                             }
 
-                            if (!stationLinks[abbr][reverseDirection(routeDetails.direction)]) {
-                                stationLinks[abbr][reverseDirection(routeDetails.direction)] = {}
+                            if (!stationLinks[abbr].byStation[prevAbbr]) {
+                                stationLinks[abbr].byStation[prevAbbr] = {}
                             }
 
-                            stationLinks[abbr][reverseDirection(routeDetails.direction)][routeDetails.color] = stationMarkers[prevAbbr];
+                            stationLinks[abbr].byStation[prevAbbr][routeDetails.color] = routeDetails.direction;
 
                             prevAbbr = abbr;
                         }
@@ -65,67 +66,64 @@ function createStationDetails(stationMarkers, stationLinks) {
 
     // For each station, get estimates, figure out which previous station the estimate is from, then generate segments
     for (let stationAbbr of Object.keys(stationLinks)) {
-        let station = stationLinks[stationAbbr];
-
         stationPromises.push(bartapi.estimatedDepartures(stationAbbr)
             .then(estimates => {
                 let segments = [];
                 if (estimates && estimates.length > 0) {
-                    let allDestinations = [].concat([], ...estimates.map(dest => dest.estimate));
-                    let routeDelays = {'North': {}, 'South': {}};
+                    let allEstimates = [].concat([], ...estimates.map(dest => dest.estimate));
 
-                    for (let trainEst of allDestinations) {
-                        if (!routeDelays[trainEst.direction].hasOwnProperty(trainEst.color)) {
-                            routeDelays[trainEst.direction][trainEst.color] = [];
+                    // Collect arrival times, ordered by route and direction
+                    let routeDelays = {};
+                    for (let trainEst of allEstimates) {
+                        if (!routeDelays[trainEst.color]) {
+                            routeDelays[trainEst.color] = {North: [], South: []};
                         }
-                        routeDelays[trainEst.direction][trainEst.color].push(parseInt(trainEst.delay))
+                        routeDelays[trainEst.color][trainEst.direction].push(parseInt(trainEst.delay))
                     }
 
-                    for (let direction of ['North', 'South']) {
-                        // TODO: I think I've got the directions in these data structures reversed, though the
-                        // TODO: output is correct
-
-                        // Collect routes that come from each prev station
-                        let prevStationRoutes = {};
-                        if (stationLinks[stationAbbr][direction]) {
-                            for (let [color, stn] of Object.entries(stationLinks[stationAbbr][direction])) {
-                                if (!prevStationRoutes[stn.label]) {
-                                    prevStationRoutes[stn.label] = new Set()
-                                }
-                                prevStationRoutes[stn.label].add(color);
-                            }
+                    // Get average estimate for all trains coming from previous station
+                    let prevStationEstimates = {};
+                    for (let [prevStationAbbr, colorDirections] of Object.entries(stationLinks[stationAbbr].byStation)) {
+                        if (!prevStationEstimates[prevStationAbbr]) {
+                            prevStationEstimates[prevStationAbbr] = [];
                         }
 
-                        // Get average estimate for all trains coming from previous station
-                        let prevStationEstimates = {};
-                        for (let [prevStationAbbr, colors] of Object.entries(prevStationRoutes)) {
-                            prevStationEstimates[prevStationAbbr] =
-                                [...colors].map(color => avgDelay(routeDelays[reverseDirection(direction)][color] || []))
+                        for (let [color, direction] of Object.entries(colorDirections)) {
+                            if (!routeDelays[color]) { continue; }
+                            let delays = routeDelays[color][direction];
+                            prevStationEstimates[prevStationAbbr].push(...delays)
                         }
+                    }
 
-                        // Create Segment for each previous station
-                        for (let [prevStationAbbr, estimate] of Object.entries(prevStationEstimates)) {
-                            segments.push(polylineForStations([stationLinks[prevStationAbbr], station], reverseDirection(direction), estimate))
-                        }
+                    // Create Segment for each previous station
+                    for (let [prevStationAbbr, estimates] of Object.entries(prevStationEstimates)) {
+                        segments.push(polylineForStations([stationMarkers[prevStationAbbr], stationMarkers[stationAbbr]],
+                                                          avgDelay(estimates)))
                     }
                 }
-                return {stationAbbr, estimates, segments};
+                return {stationAbbr, marker: stationMarkers[stationAbbr],
+                        estimates, segments};
             })
             .catch(error => {
                 console.log(error);
-                return {stationAbbr: stationAbbr, estimates: [], segments: []}
+                return {stationAbbr: stationAbbr, marker: stationMarkers[stationAbbr],
+                        estimates: [], segments: []}
             })
         )
     }
 
     return Promise.all(stationPromises)
-        .then(stationDetails => {return stationDetails.reduce(
-            (obj, stationDetail) => {
-                stationDetail['marker'] = stationMarkers[stationDetail.stationAbbr];
-                addArrivalWindowToMarker(stationDetail.marker, stationDetail.estimates, map);
-                obj[stationDetail.stationAbbr] = stationDetail;
-                return obj;
-            }, {})
+        .then(stationDetailResults => {
+            // TODO: return only segments, markers, and links. Schedule periodic refreshes, cleaning up segments, then
+            // TODO: rerunning this function.
+            let stationDetails = stationDetailResults.reduce(
+                (obj, stationDetail) => {
+                    addArrivalWindowToMarker(stationDetail.marker, stationDetail.estimates, map);
+                    obj[stationDetail.stationAbbr] = stationDetail;
+                    return obj;
+                }, {});
+
+            return {stationDetails, stationMarkers, stationLinks}
         });
 }
 
@@ -164,17 +162,17 @@ function stationListToMarkers(stations) {
             title: station.name,
             label: station.abbr,
             position: location,
-            map: map
+            map: map,
+            opacity: 0.5
         });
     }
 
     return stationMarkers;
 }
 
-function polylineForStations(stationMarkers, direction, estimate) {
+function polylineForStations(stationMarkers, estimate) {
     let locations = stationMarkers.map(marker => marker.position);
 
-    // TODO: Offset locations for direction so that lines appear side by side
     var lineSymbol = {
         path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
         scale: 3
@@ -191,7 +189,7 @@ function polylineForStations(stationMarkers, direction, estimate) {
         path: [newStart, locations[1]],
         geodesic: true,
         strokeColor: lineColorForEstimate(estimate),
-        strokeOpacity: 0.5,
+        strokeOpacity: 1,
         strokeWeight: 5,
         icons: [{
             icon: lineSymbol,
