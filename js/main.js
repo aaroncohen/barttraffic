@@ -14,7 +14,9 @@ $(() => {
         bartapi.stationList()
             .then(stations => stationListToMarkers(stations))
             .then(stationMarkers => createStationLinks(stationMarkers))
-            .then(({stationMarkers, stationLinks}) => createStationDetails(stationMarkers, stationLinks));
+            .then(({stationMarkers, stationLinks}) => createStationDetails(stationMarkers, stationLinks))
+            .catch(error => {
+                console.log(error)});
     });
 
 function createStationLinks(stationMarkers) {
@@ -160,10 +162,14 @@ function stationListToMarkers(stations) {
 
         stationMarkers[station.abbr] = new google.maps.Marker({
             title: station.name,
-            label: station.abbr,
             position: location,
             map: map,
-            opacity: 0.5
+            opacity: 0.5,
+            icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 6,
+                strokeColor: 'blue'
+            },
         });
     }
 
@@ -174,8 +180,8 @@ function polylineForStations(stationMarkers, estimate) {
     let locations = stationMarkers.map(marker => marker.position);
 
     var lineSymbol = {
-        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-        scale: 3
+        path: google.maps.SymbolPath.FORWARD_OPEN_ARROW,
+        scale: 2
     };
 
     // Cut line between stations at midpoint and set the start point to the midpoint -- this will allow us to see
@@ -193,7 +199,8 @@ function polylineForStations(stationMarkers, estimate) {
         strokeWeight: 5,
         icons: [{
             icon: lineSymbol,
-            offset: '100%'
+            repeat: '20px'
+            //offset: '40px'
         }],
         map: map
     });
