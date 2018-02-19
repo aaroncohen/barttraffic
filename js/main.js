@@ -1,6 +1,7 @@
 import {BartAPI} from './bart_api.js'
 
 var map;
+var infowindow;
 var bartapi = new BartAPI();
 
 
@@ -102,6 +103,11 @@ function createStationDetails(stationMarkers, stationLinks) {
                         segments.push(polylineForStations([stationMarkers[prevStationAbbr], stationMarkers[stationAbbr]],
                                                           avgDelay(estimates)))
                     }
+
+                    stationMarkers[stationAbbr].estimatesHTML = formatStationInfo(
+                        stationMarkers[stationAbbr].title,
+                        estimates
+                    )
                 }
                 return {stationAbbr, marker: stationMarkers[stationAbbr],
                         estimates, segments};
@@ -120,7 +126,7 @@ function createStationDetails(stationMarkers, stationLinks) {
             // TODO: rerunning this function.
             let stationDetails = stationDetailResults.reduce(
                 (obj, stationDetail) => {
-                    addArrivalWindowToMarker(stationDetail.marker, stationDetail.estimates, map);
+                    attachEstimatesWindowToMarker(stationDetail.marker, stationDetail.estimates, map);
                     obj[stationDetail.stationAbbr] = stationDetail;
                     return obj;
                 }, {});
@@ -169,7 +175,7 @@ function stationListToMarkers(stations) {
                 path: google.maps.SymbolPath.CIRCLE,
                 scale: 6,
                 strokeColor: 'blue'
-            },
+            }
         });
     }
 
@@ -238,27 +244,22 @@ function formatStationInfo(stationName, estimates) {
         </table>`;
 }
 
-function addArrivalWindowToMarker(marker, estimates, map) {
-    if (!estimates) {
-        return;
+function attachEstimatesWindowToMarker(marker, estimates, map) {
+    if (!infowindow) {
+        infowindow = new google.maps.InfoWindow({content: ''});
+        map.addListener('click', () => {
+            infowindow.close();
+        })
     }
 
-    let infowindow = new google.maps.InfoWindow({
-        content: formatStationInfo(marker.title, estimates)
-    });
-
-    // TODO: make this work better/smarter
-    marker.addListener('click', function() {
-        if(!marker.open){
-            infowindow.open(map,marker);
-            marker.open = true;
+    marker.addListener('click', () => {
+        if (marker.hasOwnProperty('estimatesHTML') && marker.estimatesHTML) {
+            infowindow.setContent(marker.estimatesHTML);
+        } else {
+            infowindow.setContent(`<h5>No estimates available.</h5>`);
         }
-        else{
-            infowindow.close();
-            marker.open = false;
-        }
+        infowindow.open(map, marker);
     });
-
 }
 
 
