@@ -126,7 +126,7 @@ function createStationDetails(stationMarkers, stationLinks) {
             // TODO: rerunning this function.
             let stationDetails = stationDetailResults.reduce(
                 (obj, stationDetail) => {
-                    attachEstimatesWindowToMarker(stationDetail.marker, stationDetail.estimates, map);
+                    attachEstimatesWindowToMarker(stationDetail.marker, map);
                     obj[stationDetail.stationAbbr] = stationDetail;
                     return obj;
                 }, {});
@@ -197,7 +197,7 @@ function polylineForStations(stationMarkers, estimate) {
 
     let newStart = new google.maps.LatLng(midpoint[0], midpoint[1]);
 
-    return new google.maps.Polyline({
+    let line = new google.maps.Polyline({
         path: [newStart, locations[1]],
         geodesic: true,
         strokeColor: lineColorForEstimate(estimate),
@@ -209,6 +209,12 @@ function polylineForStations(stationMarkers, estimate) {
         }],
         map: map
     });
+
+    line.delayHTML = `<span>Avg delay from ${stationMarkers[0].title} to ${stationMarkers[1].title} is ${estUnitsText(estimate)}</span>`;
+
+    attachAverageDelayWindowToPolyLine(line, map);
+
+    return line;
 }
 
 function reverseDirection(direction) {
@@ -226,6 +232,7 @@ function formatStationInfo(stationName, estimates) {
             <thead>
                 <tr>
                     <th scope="col">Destination</th>
+                    <th scope="col"></th>
                     <th scope="col">ETA</th>
                     <th scope="col">Delay</th>
                 </tr>
@@ -235,22 +242,17 @@ function formatStationInfo(stationName, estimates) {
                     <tr>
                         <td>${destination.destination}</td>
                         <td>${destination.estimate.map((train) => `<div class="colorbox"
-                                                                         style="background-color: ${train.hexcolor}"></div>
-                                                                    ${train.minutes}`).join('<br>')}</td>
-                        <td>${destination.estimate.map((train) => train.delay).join('<br>')}</td>
+                                                                         style="background-color: ${train.hexcolor}"></div>`).join('<br>')}</td>
+                        <td class="text-right">${destination.estimate.map((train) => estUnitsText(train.minutes)).join('<br>')}</td>
+                        <td class="text-right">${destination.estimate.map((train) => estUnitsText(train.delay)).join('<br>')}</td>
                     </tr>
                 `).join('')}
             </tbody>
         </table>`;
 }
 
-function attachEstimatesWindowToMarker(marker, estimates, map) {
-    if (!infowindow) {
-        infowindow = new google.maps.InfoWindow({content: ''});
-        map.addListener('click', () => {
-            infowindow.close();
-        })
-    }
+function attachEstimatesWindowToMarker(marker, map) {
+    initializeInfoWindow();
 
     marker.addListener('click', () => {
         if (marker.hasOwnProperty('estimatesHTML') && marker.estimatesHTML) {
@@ -260,6 +262,40 @@ function attachEstimatesWindowToMarker(marker, estimates, map) {
         }
         infowindow.open(map, marker);
     });
+}
+
+function attachAverageDelayWindowToPolyLine(polyline, map) {
+    initializeInfoWindow();
+
+    polyline.addListener('click', (e) => {
+        if (polyline.hasOwnProperty('delayHTML') && polyline.delayHTML) {
+            infowindow.setContent(polyline.delayHTML);
+        } else {
+            infowindow.setContent(`<h5>No delay info available.</h5>`);
+        }
+        infowindow.setPosition(e.latLng);
+        infowindow.open(map);
+    });
+}
+
+function initializeInfoWindow() {
+    if (!infowindow) {
+        infowindow = new google.maps.InfoWindow({content: ''});
+        map.addListener('click', () => {
+            infowindow.close();
+        })
+    }
+}
+
+function estUnitsText(estimate) {
+    let parsedInt = parseInt(estimate);
+    if (isNaN(parsedInt)) {
+        return estimate;
+    } else if (parsedInt === 1) {
+        return '1 min';
+    } else {
+        return `${estimate} mins`;
+    }
 }
 
 
