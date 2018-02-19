@@ -200,7 +200,6 @@ function polylineForStations(stationMarkers, estimate) {
         icons: [{
             icon: lineSymbol,
             repeat: '20px'
-            //offset: '40px'
         }],
         map: map
     });
@@ -229,12 +228,12 @@ function formatStationInfo(stationName, estimates) {
                 ${estimates.map((destination) => `
                     <tr>
                         <td>${destination.destination}</td>
-                        <td>${(destination.estimate.map((train) => `<div class="colorbox"
+                        <td>${destination.estimate.map((train) => `<div class="colorbox"
                                                                          style="background-color: ${train.hexcolor}"></div>
-                                                                    ${train.minutes}`).join('<br>'))}</td>
-                        <td>${(destination.estimate.map((train) => train.delay).join('<br>'))}</td>
+                                                                    ${train.minutes}`).join('<br>')}</td>
+                        <td>${destination.estimate.map((train) => train.delay).join('<br>')}</td>
                     </tr>
-                `)}
+                `).join('')}
             </tbody>
         </table>`;
 }
