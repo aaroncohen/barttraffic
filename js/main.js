@@ -294,7 +294,7 @@ function estUnitsText(estimate) {
     } else if (parsedInt === 1) {
         return '1 min';
     } else {
-        return `${estimate} mins`;
+        return `${Math.round(estimate)} mins`;
     }
 }
 
