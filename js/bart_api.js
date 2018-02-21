@@ -48,6 +48,11 @@ export class BartAPI {
             .then(data => data.station[0].etd)
             .catch(() => {return []})
     }
+
+    advisories() {
+        return this.makeRequest('bsa', {cmd: 'bsa'})
+            .then(data => data.bsa[0].description['#cdata-section'])
+    }
 }
 
 

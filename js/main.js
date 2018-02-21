@@ -10,6 +10,7 @@ const refreshRate = 60000 * 3; // mins
 $(() => {
         map = initMap(document.getElementById('map'));
         populateMap();
+        updateAdvisories();
     });
 
 function initMap(element) {
@@ -40,8 +41,8 @@ function clearSegments(stationDetails) {
 
 function refreshLoop(stationLinks, delay, stationDetails) {
     console.log('Refreshing delays');
-    if (infowindow) {infowindow.close()};
-    if (stationDetails) {clearSegments(stationDetails)};
+    if (infowindow) {infowindow.close()}
+    if (stationDetails) {clearSegments(stationDetails)}
     createStationDetails(stationLinks)
         .then(stationDetails => {
             setTimeout(() => refreshLoop(stationLinks, delay, stationDetails), delay);
@@ -144,9 +145,7 @@ function createStationDetails(stationLinks) {
 
     return Promise.all(stationPromises)
         .then(stationDetailResults => {
-            // TODO: return only segments, markers, and links. Schedule periodic refreshes, cleaning up segments, then
-            // TODO: rerunning this function.
-            let stationDetails = stationDetailResults.reduce(
+            return stationDetailResults.reduce(
                 (obj, stationDetail) => {
                     attachEstimatesWindowToMarker(stationDetail.marker, stationDetail.estimates, map);
                     for (let segment of stationDetail.segments) {
@@ -155,7 +154,6 @@ function createStationDetails(stationLinks) {
                     obj[stationDetail.marker.abbr] = stationDetail;
                     return obj;
                 }, {});
-            return stationDetails
         });
 }
 
@@ -338,6 +336,18 @@ function estUnitsText(estimate) {
     }
 }
 
+function updateAdvisories() {
+    bartapi.advisories()
+        .then(advisoryText => {
+            console.log(`Advisory text: ${advisoryText}`);
+            let $advisoryText = $('#advisoryText');
+            if (advisoryText === 'No delays reported.') {
+                $advisoryText.html('');
+            } else {
+                $advisoryText.html(advisoryText);
+            }
+        })
+}
 
 /*
  * Find midpoint between two coordinates points
