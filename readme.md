@@ -14,7 +14,7 @@ similar to the way that Google Maps shows vehicular traffic.
 
 If all of the lines are green, great! No traffic!
 
-![BART Traffic Screenshot 2](barttraffic/screenshots/barttraffic_screen_2.png)
+![BART Traffic Screenshot 2](https://raw.githubusercontent.com/aaroncohen/barttraffic/master/screenshots/barttraffic_screen_2.png)
 
 This was written as an opportunity to learn ECMAScript 6 Javascript. It is entirely client side, and hammers the BART 
 API a bit when pulling down information about the location of every station as well as estimated train arrival times.
