@@ -16,9 +16,11 @@ export class BartAPI {
         // Add params to URL
         Object.keys(params).forEach(key => fullUrl.searchParams.append(key, params[key]));
 
-        return fetch(fullUrl)
-            .then(response => { return response.json() })
-            .then(data => { return data.root });
+        return retry(2, () => {
+            return fetch(fullUrl)
+                .then(response => response.json())
+                .then(data => data.root)
+        });
     }
 
     stationList() {
@@ -46,4 +48,23 @@ export class BartAPI {
             .then(data => data.station[0].etd)
             .catch(() => {return []})
     }
+}
+
+
+function retry(retries, fn, delay=500) {
+    return fn().catch(err => {
+        if (retries > 1) {
+            console.log('Retrying API call');
+            return pause(delay).then(() => {
+                return retry(retries - 1, fn, delay * 2);
+            })
+        } else {
+            console.log('API ran out of retries for call');
+            return Promise.reject(err)
+        }
+    });
+}
+
+function pause(duration) {
+    return new Promise(res => setTimeout(res, duration))
 }

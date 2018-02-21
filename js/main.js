@@ -6,19 +6,63 @@ var bartapi = new BartAPI();
 
 
 $(() => {
-        console.log('Initializing map');
-        map = new google.maps.Map(document.getElementById('map'), {
-            center: {lat: 37.804872, lng: -122.295140},
-            zoom: 11
-        });
-
-        bartapi.stationList()
-            .then(stations => stationListToMarkers(stations))
-            .then(stationMarkers => createStationLinks(stationMarkers))
-            .then(({stationMarkers, stationLinks}) => createStationDetails(stationMarkers, stationLinks))
-            .catch(error => {
-                console.log(error)});
+        map = initMap(document.getElementById('map'));
+        populateMap();
     });
+
+function initMap(element) {
+    console.log('Initializing map');
+    return new google.maps.Map(element, {
+        center: {lat: 37.774836, lng: -122.224175},
+        zoom: 10.75
+    });
+}
+
+function populateMap() {
+    bartapi.stationList()
+        .then(stations => stationListToMarkers(stations))
+        .then(stationMarkers => createStationLinks(stationMarkers))
+        .then(stationLinks => createStationDetails(stationLinks))
+        .then(({stationDetails, stationLinks}) => {
+            setTimeout(() => {
+                infowindow.close();
+                //clearSegments(stationDetails);
+                //createStationDetails(stationLinks);
+            }, 10000)})
+        .catch(error => {
+            console.log(error)});
+}
+
+function clearSegments(stationDetails) {
+    for (let stationDetail of Object.values(stationDetails)) {
+        for (let segment of stationDetail.segments) {
+            segment.setMap(null);
+        }
+    }
+}
+
+function stationListToMarkers(stations) {
+    return new Map(stations.map(station => [station.abbr, createMarkerForStation(station)]));
+}
+
+function createMarkerForStation(station) {
+    let location = new google.maps.LatLng(parseFloat(station.gtfs_latitude), parseFloat(station.gtfs_longitude));
+
+    let marker = new google.maps.Marker({
+        title: station.name,
+        position: location,
+        map: map,
+        opacity: 0.5,
+        icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 6,
+            strokeColor: 'blue'
+        }
+    });
+
+    marker.abbr = station.abbr;
+    return marker;
+}
 
 function createStationLinks(stationMarkers) {
     // Create a map of stations allowing lookup by abbreviation to get north and south connected stations and relevant
@@ -27,7 +71,7 @@ function createStationLinks(stationMarkers) {
     // NOTE: Using routeColor here because it's the only indication of the actual route in the estimated times later.
     // NOTE: Direction can vary by route despite heading in the same physical direction between two stations.
 
-    let stationLinks = {};
+    let stationLinks = new Map();
 
     return bartapi.routeList()
         .then(routes => {
@@ -35,25 +79,26 @@ function createStationLinks(stationMarkers) {
             for (let route of routes) {
                 routePromises.push(bartapi.routeDetail(route.number)
                     .then(routeDetails => {
-                        let prevAbbr = null;
+                        let prevMarker = null;
                         for (let abbr of routeDetails.config.station) {
-                            if (prevAbbr === null) {
-                                prevAbbr = abbr;
+                            let stationMarker = stationMarkers.get(abbr);
+                            if (prevMarker === null) {
+                                prevMarker = stationMarker;
                                 continue;  // Skip first one so that we have something to associate
                             }
 
                             // Ensure structure
-                            if (!stationLinks[abbr]) {
-                                stationLinks[abbr] = {byStation: {}};
+                            if (!stationLinks.has(stationMarker)) {
+                                stationLinks.set(stationMarker, new Map());
                             }
 
-                            if (!stationLinks[abbr].byStation[prevAbbr]) {
-                                stationLinks[abbr].byStation[prevAbbr] = {}
+                            if (!stationLinks.get(stationMarker).has(prevMarker)) {
+                                stationLinks.get(stationMarker).set(prevMarker, new Map());
                             }
 
-                            stationLinks[abbr].byStation[prevAbbr][routeDetails.color] = routeDetails.direction;
+                            stationLinks.get(stationMarker).get(prevMarker).set(routeDetails.color, routeDetails.direction);
 
-                            prevAbbr = abbr;
+                            prevMarker = stationMarker;
                         }
                     })
                 );
@@ -61,61 +106,31 @@ function createStationLinks(stationMarkers) {
             return routePromises;
         })
         .then(routePromises => Promise.all(routePromises))
-        .then(() => {return {stationMarkers: stationMarkers, stationLinks: stationLinks}});
+        .then(() => stationLinks);
 }
 
-function createStationDetails(stationMarkers, stationLinks) {
+function createStationDetails(stationLinks) {
     let stationPromises = [];
 
     // For each station, get estimates, figure out which previous station the estimate is from, then generate segments
-    for (let stationAbbr of Object.keys(stationLinks)) {
-        stationPromises.push(bartapi.estimatedDepartures(stationAbbr)
+    for (let stationMarker of stationLinks.keys()) {
+        let stationDetail = {marker: stationMarker, estimates: [], segments: []};
+        stationPromises.push(bartapi.estimatedDepartures(stationMarker.abbr)
             .then(estimates => {
-                let segments = [];
+                stationDetail.estimates = estimates;
                 if (estimates && estimates.length > 0) {
-                    let allEstimates = [].concat([], ...estimates.map(dest => dest.estimate));
+                    let routeDelays = stationEstimatesToRouteDelays(estimates);
 
-                    // Collect arrival times, ordered by route and direction
-                    let routeDelays = {};
-                    for (let trainEst of allEstimates) {
-                        if (!routeDelays[trainEst.color]) {
-                            routeDelays[trainEst.color] = {North: [], South: []};
-                        }
-                        routeDelays[trainEst.color][trainEst.direction].push(parseInt(trainEst.delay))
-                    }
+                    let prevStationDelays = delaysByPrevStation(stationLinks.get(stationMarker), routeDelays);
 
-                    // Get average estimate for all trains coming from previous station
-                    let prevStationEstimates = {};
-                    for (let [prevStationAbbr, colorDirections] of Object.entries(stationLinks[stationAbbr].byStation)) {
-                        if (!prevStationEstimates[prevStationAbbr]) {
-                            prevStationEstimates[prevStationAbbr] = [];
-                        }
-
-                        for (let [color, direction] of Object.entries(colorDirections)) {
-                            if (!routeDelays[color]) { continue; }
-                            let delays = routeDelays[color][direction];
-                            prevStationEstimates[prevStationAbbr].push(...delays)
-                        }
-                    }
-
-                    // Create Segment for each previous station
-                    for (let [prevStationAbbr, estimates] of Object.entries(prevStationEstimates)) {
-                        segments.push(polylineForStations([stationMarkers[prevStationAbbr], stationMarkers[stationAbbr]],
-                                                          avgDelay(estimates)))
-                    }
-
-                    stationMarkers[stationAbbr].estimatesHTML = formatStationInfo(
-                        stationMarkers[stationAbbr].title,
-                        estimates
-                    )
+                    stationDetail.segments = segmentsForStation(stationMarker, prevStationDelays);
                 }
-                return {stationAbbr, marker: stationMarkers[stationAbbr],
-                        estimates, segments};
+
+                return stationDetail;
             })
             .catch(error => {
                 console.log(error);
-                return {stationAbbr: stationAbbr, marker: stationMarkers[stationAbbr],
-                        estimates: [], segments: []}
+                return stationDetail
             })
         )
     }
@@ -126,13 +141,57 @@ function createStationDetails(stationMarkers, stationLinks) {
             // TODO: rerunning this function.
             let stationDetails = stationDetailResults.reduce(
                 (obj, stationDetail) => {
-                    attachEstimatesWindowToMarker(stationDetail.marker, map);
-                    obj[stationDetail.stationAbbr] = stationDetail;
+                    attachEstimatesWindowToMarker(stationDetail.marker, stationDetail.estimates, map);
+                    for (let segment of stationDetail.segments) {
+                        attachAverageDelayWindowToPolyLine(segment, map);
+                    }
+                    obj[stationDetail.marker.abbr] = stationDetail;
                     return obj;
                 }, {});
-
-            return {stationDetails, stationMarkers, stationLinks}
+            return {stationDetails, stationLinks}
         });
+}
+
+function stationEstimatesToRouteDelays(estimates) {
+    // Collect train delays, ordered by route and direction
+
+    // We don't care about destination
+    let allEstimates = [].concat([], ...estimates.map(dest => dest.estimate));
+
+    let routeDelays = new Map();
+    for (let trainEst of allEstimates) {
+        if (!routeDelays.has(trainEst.color)) {
+            routeDelays.set(trainEst.color, new Map([['North', []], ['South', []]]));
+        }
+        routeDelays.get(trainEst.color).get(trainEst.direction).push(parseInt(trainEst.delay))
+    }
+
+    return routeDelays;
+}
+
+function delaysByPrevStation(prevStationLinks, routeDelays) {
+    // Get average estimate for all trains coming from previous station
+    let prevStationDelays = new Map();
+    for (let [prevStationMarker, colorDirections] of prevStationLinks.entries()) {
+        if (!prevStationDelays.has(prevStationMarker)) {
+            prevStationDelays.set(prevStationMarker, []);
+        }
+
+        for (let [color, direction] of colorDirections.entries()) {
+            if (!routeDelays.has(color)) { continue; }
+            let delays = routeDelays.get(color).get(direction);
+            prevStationDelays.get(prevStationMarker).push(...delays)
+        }
+    }
+
+    return prevStationDelays;
+}
+
+function segmentsForStation(stationMarker, prevStationDelays) {
+    // Create Segment for each previous station
+    return Array.from(prevStationDelays).map(([prevStationMarker, delays]) =>
+        polylineForStations([prevStationMarker, stationMarker], avgDelay(delays))
+    );
 }
 
 function avgDelay(delays) {
@@ -150,7 +209,7 @@ function avgDelay(delays) {
     }
 }
 
-function lineColorForEstimate(delay) {
+function lineColorForDelay(delay) {
     if (delay > 30) {
         return 'red';
     } else if (delay > 5) {
@@ -160,30 +219,8 @@ function lineColorForEstimate(delay) {
     }
 }
 
-function stationListToMarkers(stations) {
-    let stationMarkers = {};
-
-    for (let station of stations) {
-        let location = new google.maps.LatLng(parseFloat(station.gtfs_latitude), parseFloat(station.gtfs_longitude));
-
-        stationMarkers[station.abbr] = new google.maps.Marker({
-            title: station.name,
-            position: location,
-            map: map,
-            opacity: 0.5,
-            icon: {
-                path: google.maps.SymbolPath.CIRCLE,
-                scale: 6,
-                strokeColor: 'blue'
-            }
-        });
-    }
-
-    return stationMarkers;
-}
-
-function polylineForStations(stationMarkers, estimate) {
-    let locations = stationMarkers.map(marker => marker.position);
+function polylineForStations(startEndMarkers, delay) {
+    let locations = startEndMarkers.map(marker => marker.position);
 
     var lineSymbol = {
         path: google.maps.SymbolPath.FORWARD_OPEN_ARROW,
@@ -200,7 +237,7 @@ function polylineForStations(stationMarkers, estimate) {
     let line = new google.maps.Polyline({
         path: [newStart, locations[1]],
         geodesic: true,
-        strokeColor: lineColorForEstimate(estimate),
+        strokeColor: lineColorForDelay(delay),
         strokeOpacity: 1,
         strokeWeight: 5,
         icons: [{
@@ -210,56 +247,56 @@ function polylineForStations(stationMarkers, estimate) {
         map: map
     });
 
-    line.delayHTML = `<span>Avg delay from ${stationMarkers[0].title} to ${stationMarkers[1].title} is ${estUnitsText(estimate)}</span>`;
-
-    attachAverageDelayWindowToPolyLine(line, map);
+    line.startEndMarkers = startEndMarkers;
+    line.delay = delay;
 
     return line;
 }
 
-function reverseDirection(direction) {
-    if (direction === 'North') {
-        return 'South'
+function generateStationMarkerEstimatesDisplay(stationName, estimates) {
+    if (stationName && estimates) {
+        return `
+            <h5>${stationName}</h5>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th scope="col">Destination</th>
+                        <th scope="col"></th>
+                        <th scope="col">ETA</th>
+                        <th scope="col">Delay</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${estimates.map((destination) => `
+                        <tr>
+                            <td>${destination.destination}</td>
+                            <td>${destination.estimate.map((train) => `<div class="colorbox"
+                                                                             style="background-color: ${train.hexcolor}"></div>`).join('<br>')}</td>
+                            <td class="text-right">${destination.estimate.map((train) => estUnitsText(train.minutes)).join('<br>')}</td>
+                            <td class="text-right">${destination.estimate.map((train) => estUnitsText(train.delay)).join('<br>')}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>`;
     } else {
-        return 'North';
+        return `<h5>${stationName || 'Unknown Station'}</h5>
+                <span>No estimates available.</span>`
     }
 }
 
-function formatStationInfo(stationName, estimates) {
-    return `
-        <h5>${stationName}</h5>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th scope="col">Destination</th>
-                    <th scope="col"></th>
-                    <th scope="col">ETA</th>
-                    <th scope="col">Delay</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${estimates.map((destination) => `
-                    <tr>
-                        <td>${destination.destination}</td>
-                        <td>${destination.estimate.map((train) => `<div class="colorbox"
-                                                                         style="background-color: ${train.hexcolor}"></div>`).join('<br>')}</td>
-                        <td class="text-right">${destination.estimate.map((train) => estUnitsText(train.minutes)).join('<br>')}</td>
-                        <td class="text-right">${destination.estimate.map((train) => estUnitsText(train.delay)).join('<br>')}</td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>`;
+function generateSegmentDelayDisplay(polyline) {
+    if (polyline && !isNaN(polyline.delay)) {
+        return `<span>Avg delay from ${polyline.startEndMarkers[0].title} to ${polyline.startEndMarkers[1].title} is ${estUnitsText(polyline.delay)}</span>`
+    } else {
+        return `<span>No estimates available from ${polyline.startEndMarkers[0].title} to ${polyline.startEndMarkers[1].title}</span>`
+    }
 }
 
-function attachEstimatesWindowToMarker(marker, map) {
+function attachEstimatesWindowToMarker(marker, estimates, map) {
     initializeInfoWindow();
 
     marker.addListener('click', () => {
-        if (marker.hasOwnProperty('estimatesHTML') && marker.estimatesHTML) {
-            infowindow.setContent(marker.estimatesHTML);
-        } else {
-            infowindow.setContent(`<h5>No estimates available.</h5>`);
-        }
+        infowindow.setContent(generateStationMarkerEstimatesDisplay(marker.title, estimates));
         infowindow.open(map, marker);
     });
 }
@@ -268,11 +305,7 @@ function attachAverageDelayWindowToPolyLine(polyline, map) {
     initializeInfoWindow();
 
     polyline.addListener('click', (e) => {
-        if (polyline.hasOwnProperty('delayHTML') && polyline.delayHTML) {
-            infowindow.setContent(polyline.delayHTML);
-        } else {
-            infowindow.setContent(`<h5>No delay info available.</h5>`);
-        }
+        infowindow.setContent(generateSegmentDelayDisplay(polyline));
         infowindow.setPosition(e.latLng);
         infowindow.open(map);
     });
