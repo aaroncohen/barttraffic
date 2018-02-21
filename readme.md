@@ -14,7 +14,7 @@ similar to the way that Google Maps shows vehicular traffic.
 
 If all of the lines are green, great! No traffic!
 
-![BART Traffic Screenshot 3](https://raw.githubusercontent.com/aaroncohen/barttraffic/master/screenshots/barttraffic_screen_3.png
+![BART Traffic Screenshot 3](https://raw.githubusercontent.com/aaroncohen/barttraffic/master/screenshots/barttraffic_screen_3.png)
 ![BART Traffic Screenshot 2](https://raw.githubusercontent.com/aaroncohen/barttraffic/master/screenshots/barttraffic_screen_2.png)
 ![BART Traffic Screenshot 1](https://raw.githubusercontent.com/aaroncohen/barttraffic/master/screenshots/barttraffic_screen_1.png)
 
