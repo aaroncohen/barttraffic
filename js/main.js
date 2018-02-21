@@ -4,6 +4,8 @@ var map;
 var infowindow;
 var bartapi = new BartAPI();
 
+const refreshRate = 60000 * 3; // mins
+
 
 $(() => {
         map = initMap(document.getElementById('map'));
@@ -22,13 +24,7 @@ function populateMap() {
     bartapi.stationList()
         .then(stations => stationListToMarkers(stations))
         .then(stationMarkers => createStationLinks(stationMarkers))
-        .then(stationLinks => createStationDetails(stationLinks))
-        .then(({stationDetails, stationLinks}) => {
-            setTimeout(() => {
-                infowindow.close();
-                //clearSegments(stationDetails);
-                //createStationDetails(stationLinks);
-            }, 10000)})
+        .then(stationLinks => refreshLoop(stationLinks, refreshRate))
         .catch(error => {
             console.log(error)});
 }
@@ -39,6 +35,17 @@ function clearSegments(stationDetails) {
             segment.setMap(null);
         }
     }
+    return stationDetails;
+}
+
+function refreshLoop(stationLinks, delay, stationDetails) {
+    console.log('Refreshing delays');
+    if (infowindow) {infowindow.close()};
+    if (stationDetails) {clearSegments(stationDetails)};
+    createStationDetails(stationLinks)
+        .then(stationDetails => {
+            setTimeout(() => refreshLoop(stationLinks, delay, stationDetails), delay);
+        })
 }
 
 function stationListToMarkers(stations) {
@@ -148,7 +155,7 @@ function createStationDetails(stationLinks) {
                     obj[stationDetail.marker.abbr] = stationDetail;
                     return obj;
                 }, {});
-            return {stationDetails, stationLinks}
+            return stationDetails
         });
 }
 
