@@ -51,7 +51,10 @@ export class BartAPI {
 
     advisories() {
         return this.makeRequest('bsa', {cmd: 'bsa'})
-            .then(data => data.bsa[0].description['#cdata-section'])
+            .then(data => data.bsa.reduce((obj, advisory) => {
+                obj[advisory.station] = advisory.description['#cdata-section'];
+                return obj;
+            }, {}));
     }
 }
 

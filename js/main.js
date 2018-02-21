@@ -338,13 +338,14 @@ function estUnitsText(estimate) {
 
 function updateAdvisories() {
     bartapi.advisories()
-        .then(advisoryText => {
+        .then(advisories => {
+            let advisoryText = advisories[''];
             console.log(`Advisory text: ${advisoryText}`);
-            let $advisoryText = $('#advisoryText');
+            let $advisoryTextBox = $('#advisoryText');
             if (advisoryText === 'No delays reported.') {
-                $advisoryText.html('');
+                $advisoryTextBox.html('');
             } else {
-                $advisoryText.html(advisoryText);
+                $advisoryTextBox.html(advisoryText);
             }
         })
 }
