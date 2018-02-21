@@ -18,10 +18,15 @@ If all of the lines are green, great! No traffic!
 ![BART Traffic Screenshot 2](https://raw.githubusercontent.com/aaroncohen/barttraffic/master/screenshots/barttraffic_screen_2.png)
 ![BART Traffic Screenshot 1](https://raw.githubusercontent.com/aaroncohen/barttraffic/master/screenshots/barttraffic_screen_1.png)
 
-This was written as an opportunity to learn ECMAScript 6 Javascript. It is entirely client side, and hammers the BART 
-API a bit when pulling down information about the location of every station as well as estimated train arrival times.
-This was somewhat quickly thrown together, and was my first attempt at semi functional promise-based javascript.
+This was written as an opportunity to learn ECMAScript 6 Javascript. I'm making an attempt to use every modern feature 
+supported by recent browsers, without relying on pre-compilation to add old browser support.
+
+It is entirely client side, and hammers the BART API a bit when pulling down information about the location of every 
+station as well as estimated train arrival times, as there are no bulk methods available for getting train delay 
+information.
+
 
 TODO:
 * In the repo I've got a GeoJSON representation of the actual track routes -- I'd like to use those rather than just
-drawing naive lines between the stations.
+drawing naive lines between the stations. They represent the system as a whole, not the connections between stations, 
+though, so that's a somewhat daunting task.
