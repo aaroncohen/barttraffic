@@ -1,3 +1,4 @@
+import {retry, pause} from './api_utils.js'
 
 const baseUrl = "https://api.bart.gov/api/";
 
@@ -5,6 +6,8 @@ const defaultParams = {
     json: 'y',
     key: 'MW9S-E7SL-26DU-VV8V'  // Publicly available key
 };
+
+const numRetries = 2;
 
 
 export class BartAPI {
@@ -16,7 +19,7 @@ export class BartAPI {
         // Add params to URL
         Object.keys(params).forEach(key => fullUrl.searchParams.append(key, params[key]));
 
-        return retry(2, () => {
+        return retry(numRetries, () => {
             return fetch(fullUrl)
                 .then(response => response.json())
                 .then(data => data.root)
@@ -56,23 +59,4 @@ export class BartAPI {
                 return obj;
             }, {}));
     }
-}
-
-
-function retry(retries, fn, delay=500) {
-    return fn().catch(err => {
-        if (retries > 1) {
-            console.log('Retrying API call');
-            return pause(delay).then(() => {
-                return retry(retries - 1, fn, delay * 2);
-            })
-        } else {
-            console.log('API ran out of retries for call');
-            return Promise.reject(err)
-        }
-    });
-}
-
-function pause(duration) {
-    return new Promise(res => setTimeout(res, duration))
 }

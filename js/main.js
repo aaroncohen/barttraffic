@@ -24,7 +24,6 @@ function initMap(element) {
         streetViewControl: false,
         rotateControl: false,
         fullscreenControl: false
-
     });
 }
 
@@ -80,7 +79,7 @@ function createMarkerForStation(station) {
 }
 
 function createStationLinks(stationMarkers) {
-    // Create a map of stations allowing lookup by abbreviation to get north and south connected stations and relevant
+    // Create a map of stations allowing lookup by stationMarker to get north and south connected stations and relevant
     // routes.
 
     // NOTE: Using routeColor here because it's the only indication of the actual route in the estimated times later.
@@ -89,10 +88,9 @@ function createStationLinks(stationMarkers) {
     let stationLinks = new Map();
 
     return bartapi.routeList()
-        .then(routes => {
-            let routePromises = [];
-            for (let route of routes) {
-                routePromises.push(bartapi.routeDetail(route.number)
+        .then(routes =>
+            routes.map(route =>
+                bartapi.routeDetail(route.number)
                     .then(routeDetails => {
                         let prevMarker = null;
                         for (let abbr of routeDetails.config.station) {
@@ -116,52 +114,55 @@ function createStationLinks(stationMarkers) {
                             prevMarker = stationMarker;
                         }
                     })
-                );
-            }
-            return routePromises;
-        })
+            )
+        )
         .then(routePromises => Promise.all(routePromises))
         .then(() => stationLinks);
 }
 
 function createStationDetails(stationLinks) {
-    let stationPromises = [];
-
     // For each station, get estimates, figure out which previous station the estimate is from, then generate segments
-    for (let stationMarker of stationLinks.keys()) {
-        let stationDetail = {marker: stationMarker, estimates: [], segments: []};
-        stationPromises.push(bartapi.estimatedDepartures(stationMarker.abbr)
-            .then(estimates => {
-                stationDetail.estimates = estimates;
-                if (estimates && estimates.length > 0) {
-                    let routeDelays = stationEstimatesToRouteDelays(estimates);
-
-                    let prevStationDelays = delaysByPrevStation(stationLinks.get(stationMarker), routeDelays);
-
-                    stationDetail.segments = segmentsForStation(stationMarker, prevStationDelays);
-                }
-
-                return stationDetail;
-            })
-            .catch(error => {
-                console.log(error);
-                return stationDetail
-            })
-        )
-    }
+    let stationPromises = Array.from(stationLinks).map(([stationMarker, links]) =>
+        stationDetailsForStationMarker(stationMarker, links));
 
     return Promise.all(stationPromises)
-        .then(stationDetailResults => {
-            return stationDetailResults.reduce(
+        .then(stationDetailResults =>
+            stationDetailResults.reduce(
                 (obj, stationDetail) => {
-                    attachEstimatesWindowToMarker(stationDetail.marker, stationDetail.estimates, map);
-                    for (let segment of stationDetail.segments) {
-                        attachAverageDelayWindowToPolyLine(segment, map);
-                    }
                     obj[stationDetail.marker.abbr] = stationDetail;
                     return obj;
-                }, {});
+                }, {})
+        )
+        .then(stationDetails => {
+            for (let stationDetail of Object.values(stationDetails)) {
+                attachEstimatesWindowToMarker(stationDetail.marker, stationDetail.estimates, map);
+                for (let segment of stationDetail.segments) {
+                    attachAverageDelayWindowToPolyLine(segment, map);
+                }
+            }
+            return stationDetails;
         });
+}
+
+function stationDetailsForStationMarker(stationMarker, links) {
+    // For station, get estimates, figure out which previous station the estimate is from, then generate segments
+    return bartapi.estimatedDepartures(stationMarker.abbr)
+        .then(estimates => {
+            let stationDetail = {marker: stationMarker, estimates: estimates, segments: []};
+            if (estimates && estimates.length > 0) {
+                let routeDelays = stationEstimatesToRouteDelays(estimates);
+
+                let prevStationDelays = delaysByPrevStation(links, routeDelays);
+
+                stationDetail.segments = segmentsForStation(stationMarker, prevStationDelays);
+            }
+
+            return stationDetail;
+        })
+        .catch(error => {
+            console.log(error);
+            return {marker: stationMarker, estimates: [], segments: []}
+        })
 }
 
 function stationEstimatesToRouteDelays(estimates) {
