@@ -17,7 +17,14 @@ function initMap(element) {
     console.log('Initializing map');
     return new google.maps.Map(element, {
         center: {lat: 37.774836, lng: -122.224175},
-        zoom: 10.75
+        zoom: 10.75,
+        zoomControl: true,
+        mapTypeControl: false,
+        scaleControl: false,
+        streetViewControl: false,
+        rotateControl: false,
+        fullscreenControl: false
+
     });
 }
 
