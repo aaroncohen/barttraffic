@@ -1,17 +1,18 @@
 import {BartAPI} from './bart_api.js'
 
 var map;
-var infowindow;
+var infoWindow;
 var bartapi = new BartAPI();
 
 const refreshRate = 60000 * 3; // mins
 
 
 $(() => {
-        map = initMap(document.getElementById('map'));
-        populateMap();
-        updateAdvisories();
-    });
+    map = initMap(document.getElementById('map'));
+    infoWindow = createInfoWindow(map);
+    populateMap();
+    updateAdvisories();
+});
 
 function initMap(element) {
     console.log('Initializing map');
@@ -47,7 +48,7 @@ function clearSegments(stationDetails) {
 
 function refreshLoop(stationLinks, delay, stationDetails) {
     console.log('Refreshing delays');
-    if (infowindow) {infowindow.close()}
+    infoWindow.close();
     if (stationDetails) {clearSegments(stationDetails)}
     createStationDetails(stationLinks)
         .then(stationDetails => {
@@ -75,6 +76,10 @@ function createMarkerForStation(station) {
     });
 
     marker.abbr = station.abbr;
+    marker.estimates = null;
+
+    addClickListenerToMarker(marker, map);
+
     return marker;
 }
 
@@ -132,16 +137,7 @@ function createStationDetails(stationLinks) {
                     obj[stationDetail.marker.abbr] = stationDetail;
                     return obj;
                 }, {})
-        )
-        .then(stationDetails => {
-            for (let stationDetail of Object.values(stationDetails)) {
-                attachEstimatesWindowToMarker(stationDetail.marker, stationDetail.estimates, map);
-                for (let segment of stationDetail.segments) {
-                    attachAverageDelayWindowToPolyLine(segment, map);
-                }
-            }
-            return stationDetails;
-        });
+        );
 }
 
 function stationDetailsForStationMarker(stationMarker, links) {
@@ -150,17 +146,23 @@ function stationDetailsForStationMarker(stationMarker, links) {
         .then(estimates => {
             let stationDetail = {marker: stationMarker, estimates: estimates, segments: []};
             if (estimates && estimates.length > 0) {
+                stationMarker.estimates = estimates; // For infowindow to access the most recent estimates
+
                 let routeDelays = stationEstimatesToRouteDelays(estimates);
 
                 let prevStationDelays = delaysByPrevStation(links, routeDelays);
 
                 stationDetail.segments = segmentsForStation(stationMarker, prevStationDelays);
+                for (let segment of stationDetail.segments) {
+                    addClickListenerToPolyLine(segment, map);
+                }
             }
 
             return stationDetail;
         })
         .catch(error => {
             console.log(error);
+            stationMarker.estimates = null;
             return {marker: stationMarker, estimates: [], segments: []}
         })
 }
@@ -266,10 +268,10 @@ function polylineForStations(startEndMarkers, delay) {
     return line;
 }
 
-function generateStationMarkerEstimatesDisplay(stationName, estimates) {
-    if (stationName && estimates) {
+function generateStationMarkerEstimatesDisplay(marker) {
+    if (marker && marker.title && marker.estimates) {
         return `
-            <h5>${stationName}</h5>
+            <h5>${marker.title}</h5>
             <table class="table">
                 <thead>
                     <tr>
@@ -280,7 +282,7 @@ function generateStationMarkerEstimatesDisplay(stationName, estimates) {
                     </tr>
                 </thead>
                 <tbody>
-                    ${estimates.map((destination) => `
+                    ${marker.estimates.map((destination) => `
                         <tr>
                             <td>${destination.destination}</td>
                             <td>${destination.estimate.map((train) => `<div class="colorbox"
@@ -292,7 +294,7 @@ function generateStationMarkerEstimatesDisplay(stationName, estimates) {
                 </tbody>
             </table>`;
     } else {
-        return `<h5>${stationName || 'Unknown Station'}</h5>
+        return `<h5>${marker.title || 'Unknown Station'}</h5>
                 <span>No estimates available.</span>`
     }
 }
@@ -305,32 +307,29 @@ function generateSegmentDelayDisplay(polyline) {
     }
 }
 
-function attachEstimatesWindowToMarker(marker, estimates, map) {
-    initializeInfoWindow();
-
+function addClickListenerToMarker(marker, map) {
+    // Only attach when we've created new markers, or we'll end up with duplicate listeners
     marker.addListener('click', () => {
-        infowindow.setContent(generateStationMarkerEstimatesDisplay(marker.title, estimates));
-        infowindow.open(map, marker);
+        infoWindow.setContent(generateStationMarkerEstimatesDisplay(marker));
+        infoWindow.open(map, marker);
     });
 }
 
-function attachAverageDelayWindowToPolyLine(polyline, map) {
-    initializeInfoWindow();
-
+function addClickListenerToPolyLine(polyline, map) {
+    // Because we throw away polylines everytime we update, attach every time we refresh them
     polyline.addListener('click', (e) => {
-        infowindow.setContent(generateSegmentDelayDisplay(polyline));
-        infowindow.setPosition(e.latLng);
-        infowindow.open(map);
+        infoWindow.setContent(generateSegmentDelayDisplay(polyline));
+        infoWindow.setPosition(e.latLng);
+        infoWindow.open(map);
     });
 }
 
-function initializeInfoWindow() {
-    if (!infowindow) {
-        infowindow = new google.maps.InfoWindow({content: ''});
-        map.addListener('click', () => {
-            infowindow.close();
-        })
-    }
+function createInfoWindow(map) {
+    infoWindow = new google.maps.InfoWindow({content: ''});
+    map.addListener('click', () => {
+        infoWindow.close();
+    });
+    return infoWindow;
 }
 
 function estUnitsText(estimate) {
