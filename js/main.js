@@ -43,7 +43,6 @@ function clearSegments(stationDetails) {
             segment.setMap(null);
         }
     }
-    return stationDetails;
 }
 
 function refreshLoop(stationLinks, delay, stationDetails) {
