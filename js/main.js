@@ -1,16 +1,14 @@
 import {BartAPI} from './bart_api.js'
 
-var map;
-var infoWindow;
 var bartapi = new BartAPI();
 
 const refreshRate = 60000 * 3; // mins
 
 
 $(() => {
-    map = initMap(document.getElementById('map'));
-    infoWindow = createInfoWindow(map);
-    populateMap();
+    let map = initMap(document.getElementById('map'));
+    let infoWindow = createInfoWindow(map);
+    populateMap(map, infoWindow);
     updateAdvisories();
 });
 
@@ -28,13 +26,21 @@ function initMap(element) {
     });
 }
 
-function populateMap() {
+function populateMap(map, infoWindow) {
     bartapi.stationList()
         .then(stations => stationListToMarkers(stations))
+        .then(stationMarkers => displayStationMarkers(stationMarkers, map))
+        .then(stationMarkers => addClickListenerToMarkers(stationMarkers, map, infoWindow))
         .then(stationMarkers => createStationLinks(stationMarkers))
-        .then(stationLinks => refreshLoop(stationLinks, refreshRate))
+        .then(stationLinks => refreshLoop(stationLinks, refreshRate, map, infoWindow))
         .catch(error => {
             console.log(error)});
+}
+
+function displayStationMarkers(items, map) {
+    for (let item of items.values())
+        item.setMap(map);
+    return items;
 }
 
 function clearSegments(stationDetails) {
@@ -45,13 +51,12 @@ function clearSegments(stationDetails) {
     }
 }
 
-function refreshLoop(stationLinks, delay, stationDetails) {
+function refreshLoop(stationLinks, delay, map, infoWindow, stationDetails) {
     console.log('Refreshing delays');
-    infoWindow.close();
     if (stationDetails) {clearSegments(stationDetails)}
-    createStationDetails(stationLinks)
+    createStationDetails(stationLinks, map, infoWindow)
         .then(stationDetails => {
-            setTimeout(() => refreshLoop(stationLinks, delay, stationDetails), delay);
+            setTimeout(() => refreshLoop(stationLinks, delay, map, infoWindow, stationDetails), delay);
         })
 }
 
@@ -65,7 +70,6 @@ function createMarkerForStation(station) {
     let marker = new google.maps.Marker({
         title: station.name,
         position: location,
-        map: map,
         opacity: 0.5,
         icon: {
             path: google.maps.SymbolPath.CIRCLE,
@@ -76,8 +80,6 @@ function createMarkerForStation(station) {
 
     marker.abbr = station.abbr;
     marker.estimates = null;
-
-    addClickListenerToMarker(marker, map);
 
     return marker;
 }
@@ -124,10 +126,12 @@ function createStationLinks(stationMarkers) {
         .then(() => stationLinks);
 }
 
-function createStationDetails(stationLinks) {
+function createStationDetails(stationLinks, map, infoWindow) {
+    console.log('Generating station layout');
+
     // For each station, get estimates, figure out which previous station the estimate is from, then generate segments
     let stationPromises = Array.from(stationLinks).map(([stationMarker, links]) =>
-        stationDetailsForStationMarker(stationMarker, links));
+        stationDetailsForStationMarker(stationMarker, links, map, infoWindow));
 
     return Promise.all(stationPromises)
         .then(stationDetailResults =>
@@ -139,7 +143,7 @@ function createStationDetails(stationLinks) {
         );
 }
 
-function stationDetailsForStationMarker(stationMarker, links) {
+function stationDetailsForStationMarker(stationMarker, links, map, infoWindow) {
     // For station, get estimates, figure out which previous station the estimate is from, then generate segments
     return bartapi.estimatedDepartures(stationMarker.abbr)
         .then(estimates => {
@@ -151,10 +155,8 @@ function stationDetailsForStationMarker(stationMarker, links) {
 
                 let prevStationDelays = delaysByPrevStation(links, routeDelays);
 
-                stationDetail.segments = segmentsForStation(stationMarker, prevStationDelays);
-                for (let segment of stationDetail.segments) {
-                    addClickListenerToPolyLine(segment, map);
-                }
+                stationDetail.segments = segmentsForStation(stationMarker, prevStationDelays, map, infoWindow);
+                addClickListenerToPolyLines(stationDetail.segments, map, infoWindow);
             }
 
             return stationDetail;
@@ -201,10 +203,10 @@ function delaysByPrevStation(prevStationLinks, routeDelays) {
     return prevStationDelays;
 }
 
-function segmentsForStation(stationMarker, prevStationDelays) {
+function segmentsForStation(stationMarker, prevStationDelays, map, infoWindow) {
     // Create Segment for each previous station
     return Array.from(prevStationDelays).map(([prevStationMarker, delays]) =>
-        polylineForStations([prevStationMarker, stationMarker], avgDelay(delays))
+        polylineForStations([prevStationMarker, stationMarker], avgDelay(delays), map, infoWindow)
     );
 }
 
@@ -233,7 +235,7 @@ function lineColorForDelay(delay) {
     }
 }
 
-function polylineForStations(startEndMarkers, delay) {
+function polylineForStations(startEndMarkers, delay, map) {
     let locations = startEndMarkers.map(marker => marker.position);
 
     var lineSymbol = {
@@ -241,15 +243,16 @@ function polylineForStations(startEndMarkers, delay) {
         scale: 2
     };
 
-    // Cut line between stations at midpoint and set the start point to the midpoint -- this will allow us to see
-    // each direction clearly
-    let midpoint = middlePoint(locations[0].lat(), locations[0].lng(),
-        locations[1].lat(), locations[1].lng());
+    let angle = angleBetweenCoordinates(locations[0].lat(), locations[0].lng(),
+                                        locations[1].lat(), locations[1].lng());
+    let offsetStart = offsetPoint(locations[0].lat(), locations[0].lng(), 0.001, angle + 90);
+    let offsetEnd = offsetPoint(locations[1].lat(), locations[1].lng(), 0.001, angle + 90);
 
-    let newStart = new google.maps.LatLng(midpoint[0], midpoint[1]);
+    let newStart = new google.maps.LatLng(...offsetStart);
+    let newEnd = new google.maps.LatLng(...offsetEnd);
 
     let line = new google.maps.Polyline({
-        path: [newStart, locations[1]],
+        path: [newStart, newEnd],
         geodesic: true,
         strokeColor: lineColorForDelay(delay),
         strokeOpacity: 1,
@@ -306,7 +309,14 @@ function generateSegmentDelayDisplay(polyline) {
     }
 }
 
-function addClickListenerToMarker(marker, map) {
+function addClickListenerToMarkers(markers, map, infoWindow) {
+    for (let marker of markers.values()) {
+        addClickListenerToMarker(marker, map, infoWindow);
+    }
+    return markers;
+}
+
+function addClickListenerToMarker(marker, map, infoWindow) {
     // Only attach when we've created new markers, or we'll end up with duplicate listeners
     marker.addListener('click', () => {
         infoWindow.setContent(generateStationMarkerEstimatesDisplay(marker));
@@ -314,7 +324,14 @@ function addClickListenerToMarker(marker, map) {
     });
 }
 
-function addClickListenerToPolyLine(polyline, map) {
+function addClickListenerToPolyLines(polylines, map, infoWindow) {
+    for (let line of polylines) {
+        addClickListenerToPolyLine(line, map, infoWindow);
+    }
+    return polylines;
+}
+
+function addClickListenerToPolyLine(polyline, map, infoWindow) {
     // Because we throw away polylines everytime we update, attach every time we refresh them
     polyline.addListener('click', (e) => {
         infoWindow.setContent(generateSegmentDelayDisplay(polyline));
@@ -324,7 +341,7 @@ function addClickListenerToPolyLine(polyline, map) {
 }
 
 function createInfoWindow(map) {
-    infoWindow = new google.maps.InfoWindow({content: ''});
+    let infoWindow = new google.maps.InfoWindow({content: ''});
     map.addListener('click', () => {
         infoWindow.close();
     });
@@ -356,37 +373,44 @@ function updateAdvisories() {
         })
 }
 
-/*
- * Find midpoint between two coordinates points
- * Source : http://www.movable-type.co.uk/scripts/latlong.html
- */
-
-//-- Define radius function
 function toRad(num) {
     return num * Math.PI / 180;
 }
 
-//-- Define degrees function
 function toDeg(num) {
     return num * (180 / Math.PI);
 }
 
-//-- Define middle point function
-function middlePoint(lat1, lng1, lat2, lng2) {
+function angleBetweenCoordinates(lat1, lng1, lat2, lng2) {
+    let diffLat = lat2 - lat1;
+    let diffLng = lng2 - lng1;
+    let theta = Math.atan2(diffLng, diffLat);  // in radians
+    return toDeg(theta);
+}
 
-    //-- Longitude difference
-    var dLng = toRad(lng2 - lng1);
+function averageAngle(angle1, angle2) {
+    return ((angle2 + angle1) % 360) / 2;
+}
 
-    //-- Convert to radians
-    lat1 = toRad(lat1);
-    lat2 = toRad(lat2);
-    lng1 = toRad(lng1);
+function averageAngles(angle1, angle2) {
+    // Get both representations of angle of line that passes through the average angle
+    let avgAngle = averageAngle(angle1, angle2);
+    return [avgAngle, 180-avgAngle];
+}
 
-    var bX = Math.cos(lat2) * Math.cos(dLng);
-    var bY = Math.cos(lat2) * Math.sin(dLng);
-    var lat3 = Math.atan2(Math.sin(lat1) + Math.sin(lat2), Math.sqrt((Math.cos(lat1) + bX) * (Math.cos(lat1) + bX) + bY * bY));
-    var lng3 = lng1 + Math.atan2(bY, Math.cos(lat1) + bX);
+function offsetPoint(lat, lng, distance, angle) {
+    let radAngle = toRad(angle);
+    let x = distance * Math.sin(radAngle);
+    let y = distance * Math.cos(radAngle);
+    return [lat + y, lng + x];
+}
 
-    //-- Return result
-    return [toDeg(lat3), toDeg(lng3)];
+function mapPositionToPixels(position, map) {
+    let projection = map.getProjection();
+    let bounds = map.getBounds();
+    let topRight = projection.fromLatLngToPoint(bounds.getNorthEast());
+    let bottomLeft = projection.fromLatLngToPoint(bounds.getSouthWest());
+    let scale = Math.pow(2, map.getZoom());
+    let worldPoint = projection.fromLatLngToPoint(position);
+    return [Math.floor((worldPoint.x - bottomLeft.x) * scale), Math.floor((worldPoint.y - topRight.y) * scale)];
 }
