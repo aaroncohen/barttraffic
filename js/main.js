@@ -238,11 +238,6 @@ function lineColorForDelay(delay) {
 function polylineForStations(startEndMarkers, delay, map) {
     let locations = startEndMarkers.map(marker => marker.position);
 
-    var lineSymbol = {
-        path: google.maps.SymbolPath.FORWARD_OPEN_ARROW,
-        scale: 2
-    };
-
     let angle = angleBetweenCoordinates(locations[0].lat(), locations[0].lng(),
                                         locations[1].lat(), locations[1].lng());
     let offsetStart = offsetPoint(locations[0].lat(), locations[0].lng(), 0.001, angle + 90);
@@ -257,10 +252,6 @@ function polylineForStations(startEndMarkers, delay, map) {
         strokeColor: lineColorForDelay(delay),
         strokeOpacity: 1,
         strokeWeight: 5,
-        icons: [{
-            icon: lineSymbol,
-            repeat: '20px'
-        }],
         map: map
     });
 
