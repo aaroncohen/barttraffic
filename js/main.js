@@ -355,7 +355,7 @@ function updateAdvisories() {
         .then(advisories => {
             let advisoryText = advisories[''];
             console.log(`Advisory text: ${advisoryText}`);
-            let $advisoryTextBox = $('#advisoryText');
+            let $advisoryTextBox = $('#advisory-text');
             if (advisoryText === 'No delays reported.') {
                 $advisoryTextBox.html('');
             } else {
