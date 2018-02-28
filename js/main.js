@@ -3,13 +3,14 @@ import {BartAPI} from './bart_api.js'
 var bartapi = new BartAPI();
 
 const refreshRate = 60000 * 3; // mins
+const hiddenCheckRate = 10000; // secs -- when it's past time to refresh, check if we're still hidden this often to give
+                               //         a relatively quick update when the user comes back.
 
 
 $(() => {
     let map = initMap(document.getElementById('map'));
     let infoWindow = createInfoWindow(map);
     populateMap(map, infoWindow);
-    updateAdvisories();
 });
 
 function initMap(element) {
@@ -52,12 +53,18 @@ function clearSegments(stationDetails) {
 }
 
 function refreshLoop(stationLinks, delay, map, infoWindow, stationDetails) {
-    console.log('Refreshing delays');
-    if (stationDetails) {clearSegments(stationDetails)}
-    createStationDetails(stationLinks, map, infoWindow)
-        .then(stationDetails => {
-            setTimeout(() => refreshLoop(stationLinks, delay, map, infoWindow, stationDetails), delay);
-        })
+    if (document.hidden) {
+        console.log('Page is hidden, skipping refresh and checking back soon');
+        setTimeout(() => refreshLoop(stationLinks, delay, map, infoWindow, stationDetails), hiddenCheckRate)
+    } else {
+        console.log('Refreshing delays');
+        if (stationDetails) {clearSegments(stationDetails)}
+        updateAdvisories();
+        createStationDetails(stationLinks, map, infoWindow)
+            .then(stationDetails => {
+                setTimeout(() => refreshLoop(stationLinks, delay, map, infoWindow, stationDetails), delay);
+            })
+    }
 }
 
 function stationListToMarkers(stations) {
@@ -351,6 +358,7 @@ function estUnitsText(estimate) {
 }
 
 function updateAdvisories() {
+    console.log('Updating system advisories');
     bartapi.advisories()
         .then(advisories => {
             let advisoryText = advisories[''];
@@ -405,3 +413,4 @@ function mapPositionToPixels(position, map) {
     let worldPoint = projection.fromLatLngToPoint(position);
     return [Math.floor((worldPoint.x - bottomLeft.x) * scale), Math.floor((worldPoint.y - topRight.y) * scale)];
 }
+
