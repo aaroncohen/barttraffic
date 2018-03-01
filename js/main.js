@@ -361,7 +361,7 @@ function updateAdvisories() {
     console.log('Updating system advisories');
     bartapi.advisories()
         .then(advisories => {
-            let advisoryText = advisories[''];
+            let advisoryText = advisories[''] || advisories['BART'];
             console.log(`Advisory text: ${advisoryText}`);
             let $advisoryTextBox = $('#advisory-text');
             if (advisoryText === 'No delays reported.') {
