@@ -6,6 +6,8 @@ const refreshRate = 60000 * 3; // mins
 const hiddenCheckRate = 5 * 1000; // secs -- when it's past time to refresh, check if we're still hidden this often to give
                                   //         a relatively quick update when the user comes back.
 
+const scheduleTimeRegex = new RegExp('^(\\d{1,2}):(\\d{1,2})\\s(AM|PM)$');
+
 
 $(() => {
     let map = initMap(document.getElementById('map'));
@@ -80,7 +82,7 @@ function refreshTrainPositionLoop(routeSchedules, stationMarkers, map, trainMark
         setTimeout(() => refreshTrainPositionLoop(routeSchedules, stationMarkers, map, trainMarkers), hiddenCheckRate);
     } else {
         //console.log('Refreshing train positions');
-        let progressions = getAllTrainsProgressForSchedules(routeSchedules, moment());
+        let progressions = getAllTrainsProgressForSchedules(routeSchedules, new Date());
         trainMarkers = updateTrainMarkers(progressions, stationMarkers, trainMarkers);
         displayMarkerValues(trainMarkers, map);
         setTimeout(() => refreshTrainPositionLoop(routeSchedules, stationMarkers, map, trainMarkers), 1000)
@@ -479,7 +481,18 @@ function trainProgressForSchedule(trainSchedule, now) {
 }
 
 function parseScheduleTime(timeString) {
-    return moment(timeString, 'h-mm a').toDate();
+    // BART days change at ~3AM, not at midnight
+
+    let [fullMatch, hours, minutes, ampm] = timeString.match(scheduleTimeRegex);
+
+    hours = parseInt(hours);
+    minutes = parseInt(minutes);
+
+    if (ampm === 'PM') { hours += 12 }
+
+    let date = new Date();
+    date.setHours(hours % 24, minutes, 0, 0);
+    return date;
 }
 
 function markerForTrainPosition(trainId, fromStationMarker, toStationMarker, progress) {
