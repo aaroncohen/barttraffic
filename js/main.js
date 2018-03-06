@@ -452,11 +452,14 @@ function trainProgressForSchedule(trainId, stops, now) {
             continue;
         } else if (fromStationTime > now && stop.origTime > now) {
             // Route hasn't started yet
-            return {trainId: trainId, fromStationAbbr: null, toStationAbbr: null, progress: null}
+            break;
         }
 
         // determine progress
         let totalDuration = stop.origTime - fromStationTime;
+        if (totalDuration > 45 * 60 * 1000) {  // filter out trains with extreme durations (> 45 mins)
+            break;
+        }
         let currentDuration = now - fromStationTime;
         progress = currentDuration / totalDuration;
 
