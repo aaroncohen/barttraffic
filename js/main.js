@@ -36,11 +36,16 @@ function populateMap(map, infoWindow) {
         .then(stationMarkers => addClickListenerToMarkers(stationMarkers, map, infoWindow))
         .then(stationMarkers => createStationLinks(stationMarkers))
         .then(stationLinks => refreshTrafficLoop(stationLinks, refreshRate, map, infoWindow))
+        .then(() => showScheduledTrains(map))
         .catch(error => {
             console.log(error)});
 
-    Promise.all([getAllActiveRouteNums().then(routeNums => getSchedulesForRouteNums(routeNums)),
-                 bartapi.stationList().then(stations => stationListToMarkers(stations))])
+
+}
+
+function showScheduledTrains(map) {
+    return Promise.all([getAllActiveRouteNums().then(routeNums => getSchedulesForRouteNums(routeNums)),
+            bartapi.stationList().then(stations => stationListToMarkers(stations))])
         .then(([routeSchedules, stationMarkers]) => refreshTrainPositionLoop(routeSchedules, stationMarkers, map))
 }
 
