@@ -506,7 +506,7 @@ function calculateTrainMarkerPosition(fromStationMarker, toStationMarker, progre
         toStationMarker.position.lat(), toStationMarker.position.lng());
 
     let [lat, lng] = offsetPoint(fromStationMarker.position.lat(), fromStationMarker.position.lng(),
-        totalDistance * progress, angle);
+        totalDistance * easeInOutQuad(progress), angle);
 
     return offsetPoint(lat, lng, 0.001, angle + 90);
 }
@@ -612,4 +612,10 @@ function parseScheduleTimes(schedule) {
     }
 
     return parsedSchedule;
+}
+
+function easeInOutQuad(percent) {
+    if ((percent / 2) < 1)  // In first half of motion
+        return 1 / 2 * percent * percent;
+    return -1 / 2 * ((--percent) * (percent - 2) - 1);
 }
