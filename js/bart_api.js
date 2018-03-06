@@ -59,4 +59,8 @@ export class BartAPI {
                 return obj;
             }, {}));
     }
+
+    routeSchedule(routeNum) {
+        return this.makeRequest('sched', {cmd: 'routesched', route: routeNum})
+    }
 }

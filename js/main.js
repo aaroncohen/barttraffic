@@ -3,8 +3,8 @@ import {BartAPI} from './bart_api.js'
 var bartapi = new BartAPI();
 
 const refreshRate = 60000 * 3; // mins
-const hiddenCheckRate = 10000; // secs -- when it's past time to refresh, check if we're still hidden this often to give
-                               //         a relatively quick update when the user comes back.
+const hiddenCheckRate = 5 * 1000; // secs -- when it's past time to refresh, check if we're still hidden this often to give
+                                  //         a relatively quick update when the user comes back.
 
 
 $(() => {
@@ -30,18 +30,27 @@ function initMap(element) {
 function populateMap(map, infoWindow) {
     bartapi.stationList()
         .then(stations => stationListToMarkers(stations))
-        .then(stationMarkers => displayStationMarkers(stationMarkers, map))
+        .then(stationMarkers => displayMarkerValues(stationMarkers, map))
         .then(stationMarkers => addClickListenerToMarkers(stationMarkers, map, infoWindow))
         .then(stationMarkers => createStationLinks(stationMarkers))
-        .then(stationLinks => refreshLoop(stationLinks, refreshRate, map, infoWindow))
+        .then(stationLinks => refreshTrafficLoop(stationLinks, refreshRate, map, infoWindow))
         .catch(error => {
             console.log(error)});
+
+    Promise.all([getAllActiveRouteNums().then(routeNums => getSchedulesForRouteNums(routeNums)),
+                 bartapi.stationList().then(stations => stationListToMarkers(stations))])
+        .then(([routeSchedules, stationMarkers]) => refreshTrainPositionLoop(routeSchedules, stationMarkers, map))
 }
 
-function displayStationMarkers(items, map) {
-    for (let item of items.values())
+function displayMarkerValues(markers, map) {
+    displayMarkers(markers.values(), map);
+    return markers;
+}
+
+function displayMarkers(markers, map) {
+    for (let item of markers)
         item.setMap(map);
-    return items;
+    return markers;
 }
 
 function clearSegments(stationDetails) {
@@ -52,18 +61,29 @@ function clearSegments(stationDetails) {
     }
 }
 
-function refreshLoop(stationLinks, delay, map, infoWindow, stationDetails) {
+function refreshTrafficLoop(stationLinks, delay, map, infoWindow, stationDetails) {
     if (document.hidden) {
-        console.log('Page is hidden, skipping refresh and checking back soon');
-        setTimeout(() => refreshLoop(stationLinks, delay, map, infoWindow, stationDetails), hiddenCheckRate)
+        setTimeout(() => refreshTrafficLoop(stationLinks, delay, map, infoWindow, stationDetails), hiddenCheckRate)
     } else {
         console.log('Refreshing delays');
         if (stationDetails) {clearSegments(stationDetails)}
         updateAdvisories();
         createStationDetails(stationLinks, map, infoWindow)
             .then(stationDetails => {
-                setTimeout(() => refreshLoop(stationLinks, delay, map, infoWindow, stationDetails), delay);
+                setTimeout(() => refreshTrafficLoop(stationLinks, delay, map, infoWindow, stationDetails), delay);
             })
+    }
+}
+
+function refreshTrainPositionLoop(routeSchedules, stationMarkers, map, trainMarkers) {
+    if (document.hidden) {
+        setTimeout(() => refreshTrainPositionLoop(routeSchedules, stationMarkers, map, trainMarkers), hiddenCheckRate);
+    } else {
+        //console.log('Refreshing train positions');
+        let progressions = getAllTrainsProgressForSchedules(routeSchedules, moment());
+        trainMarkers = updateTrainMarkers(progressions, stationMarkers, trainMarkers);
+        displayMarkerValues(trainMarkers, map);
+        setTimeout(() => refreshTrainPositionLoop(routeSchedules, stationMarkers, map, trainMarkers), 1000)
     }
 }
 
@@ -72,11 +92,11 @@ function stationListToMarkers(stations) {
 }
 
 function createMarkerForStation(station) {
-    let location = new google.maps.LatLng(parseFloat(station.gtfs_latitude), parseFloat(station.gtfs_longitude));
+    let position = new google.maps.LatLng(parseFloat(station.gtfs_latitude), parseFloat(station.gtfs_longitude));
 
     let marker = new google.maps.Marker({
         title: station.name,
-        position: location,
+        position: position,
         opacity: 0.5,
         icon: {
             path: google.maps.SymbolPath.CIRCLE,
@@ -243,12 +263,12 @@ function lineColorForDelay(delay) {
 }
 
 function polylineForStations(startEndMarkers, delay, map) {
-    let locations = startEndMarkers.map(marker => marker.position);
+    let positions = startEndMarkers.map(marker => marker.position);
 
-    let angle = angleBetweenCoordinates(locations[0].lat(), locations[0].lng(),
-                                        locations[1].lat(), locations[1].lng());
-    let offsetStart = offsetPoint(locations[0].lat(), locations[0].lng(), 0.001, angle + 90);
-    let offsetEnd = offsetPoint(locations[1].lat(), locations[1].lng(), 0.001, angle + 90);
+    let angle = angleBetweenCoordinates(positions[0].lat(), positions[0].lng(),
+                                        positions[1].lat(), positions[1].lng());
+    let offsetStart = offsetPoint(positions[0].lat(), positions[0].lng(), 0.001, angle + 90);
+    let offsetEnd = offsetPoint(positions[1].lat(), positions[1].lng(), 0.001, angle + 90);
 
     let newStart = new google.maps.LatLng(...offsetStart);
     let newEnd = new google.maps.LatLng(...offsetEnd);
@@ -380,21 +400,21 @@ function toDeg(num) {
     return num * (180 / Math.PI);
 }
 
+function distanceBetweenCoordinates(lat1, lng1, lat2, lng2) {
+    let lats = lat2 - lat1;
+    let lngs = lng2 - lng1;
+
+    lats *= lats;
+    lngs *= lngs;
+
+    return Math.sqrt(lats + lngs);
+}
+
 function angleBetweenCoordinates(lat1, lng1, lat2, lng2) {
     let diffLat = lat2 - lat1;
     let diffLng = lng2 - lng1;
     let theta = Math.atan2(diffLng, diffLat);  // in radians
     return toDeg(theta);
-}
-
-function averageAngle(angle1, angle2) {
-    return ((angle2 + angle1) % 360) / 2;
-}
-
-function averageAngles(angle1, angle2) {
-    // Get both representations of angle of line that passes through the average angle
-    let avgAngle = averageAngle(angle1, angle2);
-    return [avgAngle, 180-avgAngle];
 }
 
 function offsetPoint(lat, lng, distance, angle) {
@@ -414,3 +434,154 @@ function mapPositionToPixels(position, map) {
     return [Math.floor((worldPoint.x - bottomLeft.x) * scale), Math.floor((worldPoint.y - topRight.y) * scale)];
 }
 
+function trainProgressForSchedule(trainSchedule, now) {
+    // return stations that train should be between right now, based on the schedule, and progress between them.
+    // if train hasn't started yet, or has completed its route, returns null stations and progress
+
+    let trainId = parseInt(trainSchedule['@trainId']);
+
+    let fromStationAbbr = null;
+    let fromStationTime = null;
+
+    let toStationAbbr = null;
+
+    if (trainSchedule.hasOwnProperty('stop')) {
+        for (let station of trainSchedule.stop) {
+            let progress = null;
+            let origTime = null;
+            toStationAbbr = station['@station'];
+
+            if (station.hasOwnProperty('@origTime')) {
+                origTime = parseScheduleTime(station['@origTime']);
+            }
+
+            // Skip over first station, stations without timing, or stations train has already passed
+            if (!fromStationTime || !origTime || origTime < now) {
+                fromStationAbbr = toStationAbbr;
+                fromStationTime = origTime;
+                continue;
+            } else if (fromStationTime > now && origTime > now) {
+                // Route hasn't started yet
+                return {trainId: trainId, fromStationAbbr: null, toStationAbbr: null, progress: null}
+            }
+
+            // determine progress
+            let totalDuration = origTime - fromStationTime;
+            let currentDuration = now - fromStationTime;
+            progress = currentDuration / totalDuration;
+
+            return {trainId, fromStationAbbr, toStationAbbr, progress}
+        }
+    }
+
+    // Must have finished route
+    return {trainId: trainId, fromStationAbbr: null, toStationAbbr: null, progress: null}
+}
+
+function parseScheduleTime(timeString) {
+    return moment(timeString, 'h-mm a').toDate();
+}
+
+function markerForTrainPosition(trainId, fromStationMarker, toStationMarker, progress) {
+    return createMarkerForTrain(trainId, ...calculateTrainMarkerPosition(fromStationMarker, toStationMarker, progress));
+}
+
+function calculateTrainMarkerPosition(fromStationMarker, toStationMarker, progress) {
+    let angle = angleBetweenCoordinates(fromStationMarker.position.lat(), fromStationMarker.position.lng(),
+        toStationMarker.position.lat(), toStationMarker.position.lng());
+    let totalDistance = distanceBetweenCoordinates(fromStationMarker.position.lat(), fromStationMarker.position.lng(),
+        toStationMarker.position.lat(), toStationMarker.position.lng());
+
+    let [lat, lng] = offsetPoint(fromStationMarker.position.lat(), fromStationMarker.position.lng(),
+        totalDistance * progress, angle);
+
+    return offsetPoint(lat, lng, 0.001, angle + 90);
+}
+
+function createMarkerForTrain(trainId, lat, lng) {
+    let position = new google.maps.LatLng(lat, lng);
+
+    let marker = new google.maps.Marker({
+        title: `Train ID: ${trainId}`,
+        position: position,
+        opacity: 1,
+        icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 3,
+            strokeColor: 'red'
+        }
+    });
+
+    return marker;
+}
+
+function updateTrainMarkerPosition(marker, fromStationMarker, toStationMarker, progress) {
+    let position = calculateTrainMarkerPosition(fromStationMarker, toStationMarker, progress);
+    marker.setPosition(new google.maps.LatLng(...position));
+}
+
+function getAllActiveRouteNums() {
+    return bartapi.routeList()
+        .then(routes =>
+            routes.map(route => parseInt(route.number)))
+}
+
+function getSchedulesForRouteNums(routeNums) {
+    return Promise.all(routeNums.map(routeNum => bartapi.routeSchedule(routeNum)));
+}
+
+function trainsProgressForSchedule(trains, now) {
+    // Collects progress for all trains on route
+    if (trains && trains.hasOwnProperty('route') && trains.route.hasOwnProperty('train') && trains.route.train !== '') {
+        return trains.route.train.reduce((result, trainSchedule) => {
+            result.push(trainProgressForSchedule(trainSchedule, now));
+            return result;
+        }, [])
+    } else {
+        return [];
+    }
+}
+
+function getAllTrainsProgressForSchedules(routeSchedules, now) {
+    return routeSchedules.reduce((result, schedule) => {
+        result.push(...trainsProgressForSchedule(schedule, now));
+        return result;
+    }, [])
+}
+
+function updateTrainMarkers(trainProgressions, stationMarkers, existingTrainMarkers) {
+    existingTrainMarkers = existingTrainMarkers || new Map();
+
+    for (let trainProgress of trainProgressions) {
+        if (existingTrainMarkers.has(trainProgress.trainId)) {
+            if (trainProgress.toStationAbbr) {
+                // train exists and is active, update existing marker position
+                updateTrainMarkerPosition(
+                    existingTrainMarkers.get(trainProgress.trainId),
+                    stationMarkers.get(trainProgress.fromStationAbbr),
+                    stationMarkers.get(trainProgress.toStationAbbr),
+                    trainProgress.progress
+                )
+            } else {
+                // if progress doesn't have next station, delete the train
+                existingTrainMarkers.get(trainProgress.trainId).setMap(null);
+                existingTrainMarkers.delete(trainProgress.trainId);
+            }
+        } else {
+            // if active train doesn't exist in existing markers, create it
+            if (trainProgress.toStationAbbr) {
+                existingTrainMarkers.set(
+                    trainProgress.trainId,
+                    markerForTrainPosition(
+                        trainProgress.trainId,
+                        stationMarkers.get(trainProgress.fromStationAbbr),
+                        stationMarkers.get(trainProgress.toStationAbbr),
+                        trainProgress.progress
+                    )
+                )
+            }
+        }
+    }
+
+    return existingTrainMarkers;
+}
