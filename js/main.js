@@ -522,7 +522,7 @@ function calculateTrainMarkerPosition(fromStationMarker, toStationMarker, progre
         toStationMarker.position.lat(), toStationMarker.position.lng());
 
     let [lat, lng] = offsetPoint(fromStationMarker.position.lat(), fromStationMarker.position.lng(),
-        totalDistance * easeInOutQuad(progress), angle);
+        totalDistance * progress, angle);
 
     return offsetPoint(lat, lng, 0.001, angle + 90);
 }
