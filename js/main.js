@@ -330,7 +330,7 @@ function generateTrainMarkerInfoDisplay(marker) {
         return `
             <h5>${marker.destStation.title} Train <small>(Scheduled)</small></h5>
             <span>Train ID: ${marker.title}</span><br>
-            <span>Estimated Speed: ${Math.round(calcSpeed(marker.prevPosition, marker.position, 1))} MPH</span>`;
+            <span>Avg Segment Speed: ${Math.round(calcSpeed(marker.prevPosition, marker.position, 1))} MPH</span>`;
     } else {
         return `<h6>Train ID: ${marker.title || 'Unknown'}</h6>`
     }
@@ -661,5 +661,5 @@ function calcSpeed(position1, position2, periodSecs) {
     let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); // great circle distance in radians
     let distance = 3961 * c;  // miles
 
-    return distance / periodSecs * 1.5 * 60 * 60;
+    return distance / periodSecs * 60 * 60;
 }
