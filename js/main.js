@@ -152,7 +152,7 @@ function createStationLinks(stationMarkers) {
 
                             prevMarker = stationMarker;
                         }
-                    })
+                    }).catch(() => undefined)
             )
         )
         .then(routePromises => Promise.all(routePromises))
