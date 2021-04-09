@@ -329,10 +329,10 @@ function generateTrainMarkerInfoDisplay(marker) {
     if (marker && marker.title && marker.destStation) {
         return `
             <h5>${marker.destStation.title} Train <small>(Scheduled)</small></h5>
-            <span>Train ID: ${marker.title}</span><br>
+            <span>Train Origin: ${marker.title}</span><br>
             <span>Avg Segment Speed: ${Math.round(calcSpeed(marker.prevPosition, marker.position, 1))} MPH</span>`;
     } else {
-        return `<h6>Train ID: ${marker.title || 'Unknown'}</h6>`
+        return `<h6>Train Origin: ${marker.title || 'Unknown'}</h6>`
     }
 }
 
@@ -623,7 +623,7 @@ function parseScheduleTimes(schedule) {
     let parsedSchedule = new Map();
     if (schedule.hasOwnProperty('route') && schedule.route.hasOwnProperty('train') && schedule.route.train !== '') {
         for (let train of schedule.route.train) {
-            parsedSchedule.set(parseInt(train['@trainId']),
+            parsedSchedule.set(`${train.stop[0]['@station']}-${train.stop[0]['@origTime']}`,
                 {
                     destStationAbbr: train.stop[train.stop.length-1]['@station'],
                     stops: train.stop.map(stop => {
