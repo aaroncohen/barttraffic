@@ -244,25 +244,23 @@ function segmentsForStation(stationMarker, prevStationDelays, map, infoWindow) {
 }
 
 function avgDelay(delays) {
-    let filteredDelays = delays.filter(num => num <= 90);
-
-    // If there aren't any non outliers, use the outliers
-    if (!filteredDelays || !filteredDelays.length) {
-        filteredDelays = delays;
-    }
-
-    if (filteredDelays && filteredDelays.length) {
-        return filteredDelays.reduce((total, num) => total + num) / filteredDelays.length;
+    if (delays && delays.length) {
+        return delays.reduce((total, num) => total + num) / delays.length;
     } else {
         return 0
     }
 }
 
 function lineColorForDelay(delay) {
-    if (delay > 30) {
+    let delayMins = delay / 60;
+    if (delayMins > 30) {
+        return 'black';
+    } else if (delayMins > 10) {
         return 'red';
-    } else if (delay > 5) {
+    } else if (delayMins > 5) {
         return 'orange';
+    } else if (delayMins > 1) {
+        return 'yellow';
     } else {
         return 'green';
     }
@@ -314,7 +312,7 @@ function generateStationMarkerEstimatesDisplay(marker) {
                             <td>${destination.estimate.map((train) => `<div class="colorbox"
                                                                              style="background-color: ${train.hexcolor}"></div>`).join('<br>')}</td>
                             <td class="text-right">${destination.estimate.map((train) => estUnitsText(train.minutes)).join('<br>')}</td>
-                            <td class="text-right">${destination.estimate.map((train) => estUnitsText(train.delay)).join('<br>')}</td>
+                            <td class="text-right">${destination.estimate.map((train) => delayUnitsText(train.delay)).join('<br>')}</td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -338,7 +336,7 @@ function generateTrainMarkerInfoDisplay(marker) {
 
 function generateSegmentDelayDisplay(polyline) {
     if (polyline && !isNaN(polyline.delay)) {
-        return `<span>Avg delay from ${polyline.startEndMarkers[0].title} to ${polyline.startEndMarkers[1].title} is ${estUnitsText(polyline.delay)}</span>`
+        return `<span>Avg delay from ${polyline.startEndMarkers[0].title} to ${polyline.startEndMarkers[1].title} is ${delayUnitsText(polyline.delay)}</span>`
     } else {
         return `<span>No estimates available from ${polyline.startEndMarkers[0].title} to ${polyline.startEndMarkers[1].title}</span>`
     }
@@ -353,7 +351,7 @@ function addClickListenerToStationMarkers(markers, map, infoWindow) {
 
 function addClickListenerToStationMarker(marker, map, infoWindow) {
     // Only attach when we've created new markers, or we'll end up with duplicate listeners
-    marker.addListener('click', () => {
+    marker.addListener('mouseover', () => {
         infoWindow.setContent(generateStationMarkerEstimatesDisplay(marker));
         infoWindow.open(map, marker);
     });
@@ -368,7 +366,7 @@ function addClickListenerToTrainMarkers(markers, map, infoWindow) {
 
 function addClickListenerToTrainMarker(marker, map, infoWindow) {
     // Only attach when we've created new markers, or we'll end up with duplicate listeners
-    marker.addListener('click', () => {
+    marker.addListener('mouseover', () => {
         infoWindow.setContent(generateTrainMarkerInfoDisplay(marker));
         infoWindow.open(map, marker);
     });
@@ -383,7 +381,7 @@ function addClickListenerToPolyLines(polylines, map, infoWindow) {
 
 function addClickListenerToPolyLine(polyline, map, infoWindow) {
     // Because we throw away polylines everytime we update, attach every time we refresh them
-    polyline.addListener('click', (e) => {
+    polyline.addListener('mouseover', (e) => {
         infoWindow.setContent(generateSegmentDelayDisplay(polyline));
         infoWindow.setPosition(e.latLng);
         infoWindow.open(map);
@@ -406,6 +404,35 @@ function estUnitsText(estimate) {
         return '1 min';
     } else {
         return `${Math.round(estimate)} mins`;
+    }
+}
+
+function delayUnitsText(delay) {
+    let parsedInt = parseInt(delay);
+    if (isNaN(parsedInt)) {
+        return delay;
+    } else {
+        let text = `On time`;
+        if (parsedInt > 0) {
+            // Hours, minutes and seconds
+            let hrs = Math.floor(parsedInt / 3600);
+            let mins = Math.floor((parsedInt % 3600) / 60);
+            let secs = Math.floor(parsedInt % 60);
+
+            let textParts = [];
+            if (hrs) {
+                textParts.push(`${hrs} hours`)
+            }
+            if (mins) {
+                textParts.push(`${mins} mins`)
+            }
+            if (secs) {
+                textParts.push(`${secs} secs`)
+            }
+            text = textParts.join(', ')
+        }
+
+        return text;
     }
 }
 
