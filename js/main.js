@@ -260,7 +260,7 @@ function lineColorForDelay(delay) {
     } else if (delayMins > 5) {
         return 'orange';
     } else if (delayMins > 1) {
-        return 'yellow';
+        return 'gold';
     } else {
         return 'green';
     }
